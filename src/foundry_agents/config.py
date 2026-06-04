@@ -25,6 +25,10 @@ TAX_MAPPING_PROFILE_US_FEDERAL_2024 = "us-federal-2024"
 COMPLIANCE_MODE_DEVELOPMENT = "development"
 COMPLIANCE_MODE_REGULATED = "regulated"
 
+TAX_FACT_PERSISTENCE_DISABLED = "disabled"
+TAX_FACT_PERSISTENCE_LOCAL_JSON = "local-json"
+TAX_FACT_PERSISTENCE_COSMOS = "cosmos"
+
 SUPPORTED_APP_ENVS = {APP_ENV_LOCAL, APP_ENV_DEV, APP_ENV_TEST, APP_ENV_UAT, APP_ENV_PROD}
 SUPPORTED_EXTRACTION_MODES = {
     EXTRACTION_MODE_LOCAL,
@@ -38,6 +42,11 @@ SUPPORTED_HUMAN_REVIEW_MODES = {
 }
 SUPPORTED_TAX_MAPPING_PROFILES = {TAX_MAPPING_PROFILE_US_FEDERAL_2024}
 SUPPORTED_COMPLIANCE_MODES = {COMPLIANCE_MODE_DEVELOPMENT, COMPLIANCE_MODE_REGULATED}
+SUPPORTED_TAX_FACT_PERSISTENCE_MODES = {
+    TAX_FACT_PERSISTENCE_DISABLED,
+    TAX_FACT_PERSISTENCE_LOCAL_JSON,
+    TAX_FACT_PERSISTENCE_COSMOS,
+}
 
 
 @dataclass(frozen=True)
@@ -58,7 +67,15 @@ class AgentSettings:
     require_masked_pii_in_logs: bool = True
     audit_event_enabled: bool = True
     document_intelligence_endpoint: str = ""
+    document_intelligence_key: str = ""
     document_intelligence_model_id: str = "prebuilt-tax.us.w2"
+    tax_fact_persistence_mode: str = TAX_FACT_PERSISTENCE_DISABLED
+    tax_fact_persistence_path: str = ".local_state/tax-facts"
+    cosmos_endpoint: str = ""
+    cosmos_database_name: str = ""
+    cosmos_container_name: str = ""
+    cosmos_key: str = ""
+    allow_full_pii_persistence: bool = False
 
     @property
     def is_local(self) -> bool:
@@ -81,6 +98,10 @@ class AgentSettings:
             "requireMaskedPiiInLogs": self.require_masked_pii_in_logs,
             "auditEventEnabled": self.audit_event_enabled,
             "documentIntelligenceModelId": self.document_intelligence_model_id,
+            "taxFactPersistenceMode": self.tax_fact_persistence_mode,
+            "cosmosDatabaseName": self.cosmos_database_name,
+            "cosmosContainerName": self.cosmos_container_name,
+            "allowFullPiiPersistence": self.allow_full_pii_persistence,
         }
 
 
@@ -115,6 +136,12 @@ def load_agent_settings(env: Optional[Dict[str, str]] = None) -> AgentSettings:
         COMPLIANCE_MODE_DEVELOPMENT,
         SUPPORTED_COMPLIANCE_MODES,
     )
+    tax_fact_persistence_mode = _read_choice(
+        values,
+        "TAX_FACT_PERSISTENCE_MODE",
+        TAX_FACT_PERSISTENCE_DISABLED,
+        SUPPORTED_TAX_FACT_PERSISTENCE_MODES,
+    )
 
     settings = AgentSettings(
         app_env=app_env,
@@ -127,9 +154,19 @@ def load_agent_settings(env: Optional[Dict[str, str]] = None) -> AgentSettings:
         require_masked_pii_in_logs=_read_bool(values, "REQUIRE_MASKED_PII_IN_LOGS", True),
         audit_event_enabled=_read_bool(values, "AUDIT_EVENT_ENABLED", True),
         document_intelligence_endpoint=values.get("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", ""),
+        document_intelligence_key=values.get("AZURE_DOCUMENT_INTELLIGENCE_KEY", ""),
         document_intelligence_model_id=values.get(
             "AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID", "prebuilt-tax.us.w2"
         ),
+        tax_fact_persistence_mode=tax_fact_persistence_mode,
+        tax_fact_persistence_path=values.get(
+            "TAX_FACT_PERSISTENCE_PATH", ".local_state/tax-facts"
+        ),
+        cosmos_endpoint=values.get("AZURE_COSMOS_ENDPOINT", ""),
+        cosmos_database_name=values.get("AZURE_COSMOS_DATABASE_NAME", ""),
+        cosmos_container_name=values.get("AZURE_COSMOS_CONTAINER_NAME", ""),
+        cosmos_key=values.get("AZURE_COSMOS_KEY", ""),
+        allow_full_pii_persistence=_read_bool(values, "ALLOW_FULL_PII_PERSISTENCE", False),
     )
     _validate_cross_field_settings(settings)
     return settings
@@ -225,3 +262,21 @@ def _validate_cross_field_settings(settings: AgentSettings) -> None:
         raise ValueError("APP_ENV=prod requires COMPLIANCE_MODE=regulated.")
     if settings.app_env == APP_ENV_PROD and settings.human_review_mode == HUMAN_REVIEW_MODE_LOCAL_AUTO_APPROVE:
         raise ValueError("APP_ENV=prod cannot use HUMAN_REVIEW_MODE=local-auto-approve.")
+    if settings.app_env == APP_ENV_PROD and settings.tax_fact_persistence_mode == TAX_FACT_PERSISTENCE_LOCAL_JSON:
+        raise ValueError("APP_ENV=prod cannot use TAX_FACT_PERSISTENCE_MODE=local-json.")
+    if settings.app_env == APP_ENV_PROD and settings.tax_fact_persistence_mode == TAX_FACT_PERSISTENCE_DISABLED:
+        raise ValueError("APP_ENV=prod requires durable TAX_FACT_PERSISTENCE_MODE.")
+    if settings.tax_fact_persistence_mode == TAX_FACT_PERSISTENCE_COSMOS:
+        missing = []
+        if not settings.cosmos_endpoint:
+            missing.append("AZURE_COSMOS_ENDPOINT")
+        if not settings.cosmos_database_name:
+            missing.append("AZURE_COSMOS_DATABASE_NAME")
+        if not settings.cosmos_container_name:
+            missing.append("AZURE_COSMOS_CONTAINER_NAME")
+        if missing:
+            raise ValueError(
+                "TAX_FACT_PERSISTENCE_MODE=cosmos requires "
+                + ", ".join(missing)
+                + "."
+            )

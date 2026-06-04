@@ -13,6 +13,7 @@ The agent orchestration follows a supervisor-worker pattern:
 - **Tax Mapping Agent** — maps data into 1040/tax payloads
 - **Compliance Agent** — applies final governance and compliance checks
 - **Human Review Agent** — routes flagged records for human decision-making
+- **Tax Fact Persistence** — checkpoints governed normalized tax facts for resiliency and later tax planning
 
 ## Manual Testing Without Azure Deployment
 
@@ -50,14 +51,24 @@ inject these values per environment; application code reads them through
 | `REQUIRE_MASKED_PII_IN_LOGS` | `true` | Requires masked SSN-like values in compliance checks. |
 | `AUDIT_EVENT_ENABLED` | `true` | Emits compliance audit envelopes. |
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | empty | Required when `W2_EXTRACTION_MODE=document-intelligence`. |
-| `AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID` | `prebuilt-tax.us.w2` | Model ID used by the future Document Intelligence adapter. |
+| `AZURE_DOCUMENT_INTELLIGENCE_KEY` | empty | Optional local/API-key auth. If empty, the adapter uses Azure identity through `DefaultAzureCredential`. |
+| `AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID` | `prebuilt-tax.us.w2` | Model ID used by the Document Intelligence adapter. |
+| `TAX_FACT_PERSISTENCE_MODE` | `disabled` | `disabled` skips storage, `local-json` writes governed local JSON records, `cosmos` upserts governed checkpoints to Azure Cosmos DB. |
+| `TAX_FACT_PERSISTENCE_PATH` | `.local_state/tax-facts` | Local output folder for `local-json` persistence. This path is ignored by Git. |
+| `AZURE_COSMOS_ENDPOINT` | empty | Required when `TAX_FACT_PERSISTENCE_MODE=cosmos`. |
+| `AZURE_COSMOS_DATABASE_NAME` | empty | Cosmos DB database used for governed tax fact checkpoints. |
+| `AZURE_COSMOS_CONTAINER_NAME` | empty | Cosmos DB container used for governed tax fact checkpoints. Partition key should be `/tenantId`. |
+| `AZURE_COSMOS_KEY` | empty | Optional local/API-key auth. If empty, the adapter uses Azure identity through `DefaultAzureCredential`. |
+| `ALLOW_FULL_PII_PERSISTENCE` | `false` | Allows full identity values in persisted records only when explicitly enabled. Default persistence masks SSNs. |
 
-The local mode exists only for offline development and repeatable tests. Production-like runs should set `W2_EXTRACTION_MODE=document-intelligence`; that mode fails fast until the Azure adapter is fully wired, so sample data is not used accidentally.
+The local extraction mode exists only for offline development and repeatable tests. Production-like runs should set `W2_EXTRACTION_MODE=document-intelligence`; that mode calls Azure AI Document Intelligence for the uploaded `blobUri` and maps the response into the normalized W-2 contract.
 
 Production safety rules are enforced in configuration:
 - `APP_ENV=prod` cannot use `W2_EXTRACTION_MODE=local`.
 - `APP_ENV=prod` requires `COMPLIANCE_MODE=regulated`.
 - `APP_ENV=prod` cannot use `HUMAN_REVIEW_MODE=local-auto-approve`.
+- `APP_ENV=prod` cannot use `TAX_FACT_PERSISTENCE_MODE=local-json`.
+- `APP_ENV=prod` requires durable tax fact persistence.
 
 For local development, use the repository-level `.env.example` as the safe
 template. Real `.env` files should stay local and are ignored by Git.
@@ -79,6 +90,7 @@ The local loader mirrors production precedence:
 The test harness prints a JSON log of each agent execution, showing:
 - Correlation ID and pipeline ID
 - Results from each agent
+- Durable checkpoint metadata for persisted pipeline stages
 - Timestamps
 - Next step in the workflow
 
@@ -93,14 +105,42 @@ When ready to integrate with Microsoft Foundry:
 
 ## Current Scope
 
-The local agent sequence is implemented with deterministic development adapters:
+The agent sequence is implemented with configurable local and Azure-ready adapters:
 - **Extraction** produces a normalized W-2 record, source metadata, field confidence, and overall confidence.
 - **Validation** applies required-field, EIN/SSN format, numeric amount, withholding, and confidence rules.
 - **Human Review** builds a review packet for blocking validation issues or low-confidence extraction.
 - **Tax Mapping** emits 1040-ready federal inputs plus reusable tax intelligence facts.
 - **Compliance** emits control results and an audit event envelope.
+- **Persistence** checkpoints governed tax fact records for downstream tax planning, resume support, and future analytics.
 
-The deterministic extraction adapter is the seam for the future Azure AI Document Intelligence integration. The agent contracts are intentionally stable so hosted Foundry agents and tool calls can replace local adapters without rewriting the supervisor pipeline.
+The Document Intelligence adapter calls the Azure analyze API in `document-intelligence` mode, while local mode remains deterministic for tests. The persistence boundary stores normalized facts, not raw extraction responses, and masks SSN values unless `ALLOW_FULL_PII_PERSISTENCE=true`.
+
+## Governed Tax Fact Persistence
+
+Tax planning needs durable facts, but W-2 records are restricted tax PII. The persistence boundary therefore upserts a governed record as the pipeline advances. The same record is checkpointed after intake, extraction, validation, human review when applicable, tax mapping, compliance, and completion.
+
+Each governed record contains:
+
+- document metadata and source reference
+- normalized W-2 extraction facts
+- field confidence and validation status
+- human review summary when applicable
+- normalized tax planning facts and 1040-ready mapping output
+- compliance/audit metadata
+- governance metadata, including sensitivity label and raw extraction policy
+- checkpoint stage and lifecycle status, such as `extracted`, `validated`, `mapped`, or `complete`
+
+The default guardrails are:
+
+- raw Document Intelligence output is not persisted
+- SSN-like values are masked before storage
+- local JSON output is ignored by Git under `.local_state/`
+- production cannot use local JSON persistence
+- production must configure a durable persistence mode
+- Cosmos DB mode requires endpoint, database, and container settings
+- Cosmos DB mode uses managed identity by default; API key auth is optional for local/dev only
+
+The extraction checkpoint is intentional: if the pipeline fails after Document Intelligence succeeds, the normalized W-2 facts have already been persisted and the document does not need to be re-analyzed just to resume downstream validation, review, mapping, or compliance work.
 
 ## File Structure
 

@@ -6,7 +6,9 @@ SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from foundry_agents.config import AgentSettings, EXTRACTION_MODE_DOCUMENT_INTELLIGENCE
 from foundry_agents.compliance.agent import ComplianceAgent
+from foundry_agents.extraction.adapters import DocumentIntelligenceW2ExtractionAdapter
 from foundry_agents.extraction.agent import ExtractionAgent
 from foundry_agents.tax_mapping.agent import TaxMappingAgent
 from foundry_agents.validation.agent import ValidationAgent
@@ -28,6 +30,109 @@ class AgentSequenceTests(unittest.TestCase):
         self.assertEqual(result["extractedData"]["taxYear"], 2025)
         self.assertIn("fieldConfidence", result)
         self.assertGreater(result["overallConfidence"], 0.9)
+
+    def test_document_intelligence_adapter_maps_prebuilt_w2_response(self):
+        settings = AgentSettings(
+            extraction_mode=EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
+            document_intelligence_endpoint="https://example.cognitiveservices.azure.com/",
+        )
+        adapter = DocumentIntelligenceW2ExtractionAdapter(settings)
+        adapter._analyze_document = lambda _: {
+            "apiVersion": "2024-11-30",
+            "documents": [
+                {
+                    "fields": {
+                        "TaxYear": {"valueInteger": 2024, "confidence": 0.99},
+                        "Employer": {
+                            "valueObject": {
+                                "Name": {"valueString": "Contoso Ltd", "confidence": 0.98},
+                                "IdNumber": {"valueString": "98-7654321", "confidence": 0.97},
+                            }
+                        },
+                        "Employee": {
+                            "valueObject": {
+                                "Name": {"valueString": "Jane Taxpayer", "confidence": 0.98},
+                                "SocialSecurityNumber": {
+                                    "valueString": "123-45-6789",
+                                    "confidence": 0.96,
+                                },
+                            }
+                        },
+                        "WagesTipsAndOtherCompensation": {
+                            "valueNumber": 88000,
+                            "confidence": 0.95,
+                        },
+                        "FederalIncomeTaxWithheld": {
+                            "valueNumber": 12000,
+                            "confidence": 0.94,
+                        },
+                        "SocialSecurityWages": {"valueNumber": 88000, "confidence": 0.95},
+                        "SocialSecurityTaxWithheld": {
+                            "valueNumber": 5456,
+                            "confidence": 0.95,
+                        },
+                        "MedicareWagesAndTips": {"valueNumber": 88000, "confidence": 0.95},
+                        "MedicareTaxWithheld": {"valueNumber": 1276, "confidence": 0.95},
+                        "AdditionalInfo": {
+                            "valueArray": [
+                                {
+                                    "valueObject": {
+                                        "LetterCode": {"valueString": "D", "confidence": 0.9},
+                                        "Amount": {"valueNumber": 7000, "confidence": 0.9},
+                                    }
+                                }
+                            ],
+                            "confidence": 0.9,
+                        },
+                        "StateTaxInfos": {
+                            "valueArray": [
+                                {
+                                    "valueObject": {
+                                        "State": {"valueString": "CA", "confidence": 0.92},
+                                        "StateWagesTipsEtc": {
+                                            "valueNumber": 88000,
+                                            "confidence": 0.91,
+                                        },
+                                        "StateIncomeTax": {
+                                            "valueNumber": 6000,
+                                            "confidence": 0.9,
+                                        },
+                                    }
+                                }
+                            ]
+                        },
+                        "LocalTaxInfos": {
+                            "valueArray": [
+                                {
+                                    "valueObject": {
+                                        "LocalityName": {"valueString": "SF", "confidence": 0.9},
+                                        "LocalWagesTipsEtc": {
+                                            "valueNumber": 88000,
+                                            "confidence": 0.9,
+                                        },
+                                        "LocalIncomeTax": {
+                                            "valueNumber": 1000,
+                                            "confidence": 0.9,
+                                        },
+                                    }
+                                }
+                            ]
+                        },
+                    }
+                }
+            ],
+        }
+
+        result = adapter.extract({"blobUri": "https://example/w2.pdf"})
+
+        self.assertEqual(result["extractedData"]["taxYear"], 2024)
+        self.assertEqual(result["extractedData"]["employerName"], "Contoso Ltd")
+        self.assertEqual(result["extractedData"]["employeeSSN"], "XXX-XX-6789")
+        self.assertEqual(result["extractedData"]["boxes"]["Box1"], 88000)
+        self.assertEqual(result["extractedData"]["boxes"]["Box12"][0]["code"], "D")
+        self.assertEqual(result["extractedData"]["stateLocal"][0]["localityName"], "SF")
+        self.assertEqual(result["fieldConfidence"]["employeeSSN"], 0.96)
+        self.assertEqual(result["rawResult"]["documentCount"], 1)
 
     def test_validation_flags_low_confidence_for_human_review(self):
         extraction_result = ExtractionAgent.process(

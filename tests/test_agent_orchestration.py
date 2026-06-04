@@ -25,8 +25,22 @@ class AgentOrchestrationTests(unittest.TestCase):
         )
         self.assertEqual(
             [entry["stage"] for entry in harness.execution_log],
-            ["intake", "extraction", "validation", "tax_mapping", "compliance", "finalize"],
+            [
+                "intake",
+                "intake_checkpoint",
+                "extraction",
+                "extraction_checkpoint",
+                "validation",
+                "validation_checkpoint",
+                "tax_mapping",
+                "tax_mapping_checkpoint",
+                "compliance",
+                "compliance_checkpoint",
+                "persistence",
+                "finalize",
+            ],
         )
+        self.assertIn("persistenceResult", result["payload"])
 
     def test_human_review_scenario_routes_to_review(self):
         harness = ManualTestHarness()
@@ -36,6 +50,9 @@ class AgentOrchestrationTests(unittest.TestCase):
         stages = [entry["stage"] for entry in harness.execution_log]
         self.assertEqual(result["status"], "complete")
         self.assertIn("human_review", stages)
+        self.assertIn("extraction_checkpoint", stages)
+        self.assertIn("human_review_checkpoint", stages)
+        self.assertIn("persistence", stages)
         self.assertEqual(result["payload"]["validationResult"]["validationStatus"], "failed")
         self.assertEqual(result["payload"]["humanReviewResult"]["reviewStatus"], "pending")
 
@@ -75,7 +92,18 @@ class AgentOrchestrationTests(unittest.TestCase):
         self.assertEqual(result["nextStep"], "awaiting_human_decision")
         self.assertEqual(
             [entry["stage"] for entry in pipeline.execution_log],
-            ["intake", "extraction", "validation", "human_review", "await_human_review"],
+            [
+                "intake",
+                "intake_checkpoint",
+                "extraction",
+                "extraction_checkpoint",
+                "validation",
+                "validation_checkpoint",
+                "human_review",
+                "human_review_checkpoint",
+                "await_human_review_checkpoint",
+                "await_human_review",
+            ],
         )
 
 

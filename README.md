@@ -28,7 +28,8 @@ This platform showcases an enterprise production-ready implementation of:
 ✅ **Agent-Based AI Orchestration**
 - Supervisor orchestrator coordinating multi-stage workflows
 - 7 specialized agents: Intake → Extraction → Validation → Tax Mapping → Compliance → Human Review
-- Mock implementations for local testing, real AI integration ready
+- Local deterministic adapters plus Azure Document Intelligence extraction mode
+- Governed tax fact persistence for downstream planning and analytics
 
 ✅ **Enterprise Infrastructure**
 - Complete Bicep IaC templates with best practices
@@ -210,6 +211,13 @@ See [Architecture Documentation](docs/architecture.md) for detailed diagrams and
 ✅ **Audit Trails**: Application Insights, diagnostic logging  
 ✅ **Network Isolation**: Service Bus with shared access policies  
 ✅ **Data Governance**: Microsoft Purview integration ready  
+✅ **PII Guardrails**: normalized tax facts are persisted without raw extraction output, SSNs are masked by default, and production cannot use local JSON persistence
+
+### Tax Data Persistence Guardrails
+
+The agent pipeline persists planning-ready tax facts through a dedicated governance boundary. The same governed record is checkpointed after intake, extraction, validation, human review when applicable, tax mapping, compliance, and completion. Persisted records include document metadata, normalized W-2 facts, confidence scores, validation/review status, tax planning facts, lifecycle status, and audit metadata.
+
+By default, the platform does not persist raw Document Intelligence responses and masks SSN-like values before storage. Local development can use `TAX_FACT_PERSISTENCE_MODE=local-json`, which writes to `.local_state/`; production should use `TAX_FACT_PERSISTENCE_MODE=cosmos`, which upserts governed checkpoints to Azure Cosmos DB using managed identity by default. The extraction checkpoint allows downstream processing to resume without re-running Document Intelligence after a later-stage failure.
 
 ## 🚦 Getting Started
 

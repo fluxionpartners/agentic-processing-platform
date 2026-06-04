@@ -13,6 +13,8 @@ from foundry_agents.config import (
     HUMAN_REVIEW_MODE_QUEUE,
     EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
     EXTRACTION_MODE_LOCAL,
+    TAX_FACT_PERSISTENCE_COSMOS,
+    TAX_FACT_PERSISTENCE_LOCAL_JSON,
     VALIDATION_STRICTNESS_STRICT,
     load_environment,
     load_agent_settings,
@@ -68,6 +70,11 @@ class AgentConfigTests(unittest.TestCase):
                 "REQUIRE_MASKED_PII_IN_LOGS": "true",
                 "AUDIT_EVENT_ENABLED": "true",
                 "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
+                "TAX_FACT_PERSISTENCE_MODE": TAX_FACT_PERSISTENCE_COSMOS,
+                "AZURE_COSMOS_ENDPOINT": "https://example.documents.azure.com:443/",
+                "AZURE_COSMOS_DATABASE_NAME": "tax-intelligence",
+                "AZURE_COSMOS_CONTAINER_NAME": "tax-facts",
+                "ALLOW_FULL_PII_PERSISTENCE": "false",
             }
         )
 
@@ -75,6 +82,10 @@ class AgentConfigTests(unittest.TestCase):
         self.assertEqual(settings.human_review_mode, HUMAN_REVIEW_MODE_QUEUE)
         self.assertEqual(settings.compliance_mode, COMPLIANCE_MODE_REGULATED)
         self.assertEqual(settings.low_confidence_threshold, 0.9)
+        self.assertEqual(settings.tax_fact_persistence_mode, TAX_FACT_PERSISTENCE_COSMOS)
+        self.assertEqual(settings.cosmos_database_name, "tax-intelligence")
+        self.assertEqual(settings.cosmos_container_name, "tax-facts")
+        self.assertFalse(settings.allow_full_pii_persistence)
 
     def test_prod_cannot_use_local_extraction(self):
         with self.assertRaisesRegex(ValueError, "APP_ENV=prod cannot use"):
@@ -90,6 +101,35 @@ class AgentConfigTests(unittest.TestCase):
                     "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
                 }
             )
+
+    def test_prod_cannot_use_local_json_persistence(self):
+        with self.assertRaisesRegex(ValueError, "TAX_FACT_PERSISTENCE_MODE=local-json"):
+            load_agent_settings(
+                {
+                    "APP_ENV": APP_ENV_PROD,
+                    "W2_EXTRACTION_MODE": EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
+                    "HUMAN_REVIEW_MODE": HUMAN_REVIEW_MODE_QUEUE,
+                    "COMPLIANCE_MODE": COMPLIANCE_MODE_REGULATED,
+                    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
+                    "TAX_FACT_PERSISTENCE_MODE": TAX_FACT_PERSISTENCE_LOCAL_JSON,
+                }
+            )
+
+    def test_prod_requires_durable_tax_fact_persistence(self):
+        with self.assertRaisesRegex(ValueError, "durable TAX_FACT_PERSISTENCE_MODE"):
+            load_agent_settings(
+                {
+                    "APP_ENV": APP_ENV_PROD,
+                    "W2_EXTRACTION_MODE": EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
+                    "HUMAN_REVIEW_MODE": HUMAN_REVIEW_MODE_QUEUE,
+                    "COMPLIANCE_MODE": COMPLIANCE_MODE_REGULATED,
+                    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
+                }
+            )
+
+    def test_cosmos_persistence_requires_endpoint_database_and_container(self):
+        with self.assertRaisesRegex(ValueError, "AZURE_COSMOS_ENDPOINT"):
+            load_agent_settings({"TAX_FACT_PERSISTENCE_MODE": TAX_FACT_PERSISTENCE_COSMOS})
 
     def test_parse_dotenv_reads_simple_key_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -29,9 +29,9 @@ This documentation folder contains comprehensive reference materials for the Mic
 | Service | Status | Purpose |
 |---------|--------|---------|
 | W-2 Intake | ✅ Production | Secure document upload and ingestion |
-| Document Extraction | 🟡 Scaffolded | AI-powered document parsing (Azure Document Intelligence) |
+| Document Extraction | 🟡 In progress | Local deterministic extraction plus Azure Document Intelligence adapter |
 | Data Validation | 🟡 Scaffolded | Business rules and compliance validation |
-| Tax Mapping | 🟡 Scaffolded | Tax data mapping to 1040 payloads |
+| Tax Mapping | 🟡 In progress | Tax data mapping to 1040 payloads and planning facts |
 | Audit Monitoring | 🟡 Scaffolded | Governance, audit logging, and compliance |
 
 ### Agents
@@ -40,11 +40,12 @@ This documentation folder contains comprehensive reference materials for the Mic
 |-------|--------|---------|
 | Supervisor Orchestrator | ✅ Complete | Pipeline orchestration and routing |
 | Intake Agent | ✅ Complete | Document reception and validation |
-| Extraction Agent | ✅ Mocked | Document parsing (ready for Azure Document Intelligence) |
+| Extraction Agent | ✅ In progress | Local deterministic parsing plus Azure Document Intelligence mode |
 | Validation Agent | ✅ Mocked | Business rules engine |
-| Tax Mapping Agent | ✅ Mocked | Tax payload generation |
-| Compliance Agent | ✅ Mocked | Governance checks |
+| Tax Mapping Agent | ✅ In progress | Tax payload generation and normalized planning facts |
+| Compliance Agent | ✅ In progress | Governance checks and audit envelope |
 | Human Review Agent | ✅ Mocked | Manual review routing |
+| Tax Fact Persistence | ✅ In progress | Governed local JSON records and Azure Cosmos DB upserts |
 
 ## 🏗️ Architecture Overview
 
@@ -66,6 +67,8 @@ Persistent Storage (Blob, SQL, Cosmos DB)
 ```
 
 See [Logical Architecture](architecture.md) for detailed diagrams.
+
+The current agent pipeline writes governed tax fact records through a dedicated persistence boundary. The same record is checkpointed after key stages so extracted W-2 facts survive later-stage failures. The persisted shape includes normalized W-2 facts, validation and review status, planning facts, compliance metadata, lifecycle status, and a restricted tax PII sensitivity label. Raw extraction responses are not persisted, and SSNs are masked by default.
 
 ## 📖 Documentation Structure
 

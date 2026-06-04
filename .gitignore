@@ -176,6 +176,9 @@ worker_*.log
 secrets.json
 appsettings.local.json
 
+# Local governed tax fact output (contains sensitive taxpayer data)
+.local_state/
+
 # Generated files
 dist/
 build/

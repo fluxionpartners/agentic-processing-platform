@@ -132,6 +132,14 @@ class SupervisorOrchestrator:
             "payload": self.state,
         }
 
+    def record_persistence(self, persistence_result: Dict[str, Any]) -> None:
+        """Record durable persistence metadata for the completed pipeline."""
+        self.state["persistenceResult"] = persistence_result
+
+    def record_persistence_checkpoint(self, checkpoint_result: Dict[str, Any]) -> None:
+        """Record durable checkpoint metadata for resume and audit visibility."""
+        self.state.setdefault("persistenceCheckpoints", []).append(checkpoint_result)
+
     def await_human_review(self, review_result: Dict[str, Any]) -> Dict[str, Any]:
         """Pause the pipeline until a human decision is recorded."""
         self.state["stage"] = "awaiting_human_review"
