@@ -3,11 +3,6 @@ param namePrefix string = 'taxai'
 param location string = resourceGroup().location
 param environment string = 'dev'
 
-@description('Name prefix for all resources')
-param namePrefix string = 'taxai'
-param location string = resourceGroup().location
-param environment string = 'dev'
-
 var storageAccountName = toLower('${namePrefix}${environment}stg')
 var apiMgmtName = toLower('${namePrefix}${environment}apim')
 var functionAppName = toLower('${namePrefix}${environment}fn')

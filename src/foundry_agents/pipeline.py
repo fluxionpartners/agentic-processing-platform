@@ -50,11 +50,8 @@ class AgentPipeline:
         existing_record = None
 
         if record_id:
-            try:
-                store = create_tax_fact_store(self.settings)
-                existing_record = store.load(record_id, partition_key=tenant_id)
-            except Exception:
-                existing_record = None
+            store = create_tax_fact_store(self.settings)
+            existing_record = store.load(record_id, partition_key=tenant_id)
 
         if existing_record:
             self.orchestrator.rehydrate_pipeline(existing_record)
