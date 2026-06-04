@@ -22,7 +22,9 @@ class SupervisorOrchestrator:
         self.correlation_id = None
         self.state = {}
 
-    def start_pipeline(self, intake_payload: Dict[str, Any]) -> Dict[str, Any]:
+    def start_pipeline(
+        self, intake_payload: Dict[str, Any], runtime_settings: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         """Initialize pipeline from intake trigger."""
         self.correlation_id = intake_payload.get("correlationId") or str(uuid4())
         self.pipeline_id = f"pipeline-{self.correlation_id}"
@@ -37,6 +39,7 @@ class SupervisorOrchestrator:
             "taxYear": intake_payload.get("taxYear"),
             "stage": "intake",
             "status": "in_progress",
+            "runtimeSettings": runtime_settings or {},
             "timestamp": utc_iso(),
         }
         if "mockExtractionOverrides" in intake_payload:
@@ -126,6 +129,21 @@ class SupervisorOrchestrator:
             "pipelineId": self.pipeline_id,
             "correlationId": self.correlation_id,
             "status": "complete",
+            "payload": self.state,
+        }
+
+    def await_human_review(self, review_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Pause the pipeline until a human decision is recorded."""
+        self.state["stage"] = "awaiting_human_review"
+        self.state["status"] = "waiting"
+        self.state["humanReviewResult"] = review_result
+        self.state["pausedAt"] = utc_iso()
+
+        return {
+            "pipelineId": self.pipeline_id,
+            "correlationId": self.correlation_id,
+            "status": "waiting",
+            "nextStep": "awaiting_human_decision",
             "payload": self.state,
         }
 

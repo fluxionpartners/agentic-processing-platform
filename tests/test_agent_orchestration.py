@@ -7,7 +7,8 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from foundry_agents.manual_test_harness import ManualTestHarness
-from foundry_agents.pipeline import process_w2_ingestion_event
+from foundry_agents.config import AgentSettings, HUMAN_REVIEW_MODE_QUEUE
+from foundry_agents.pipeline import AgentPipeline, process_w2_ingestion_event
 
 
 class AgentOrchestrationTests(unittest.TestCase):
@@ -18,6 +19,10 @@ class AgentOrchestrationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["payload"]["status"], "success")
+        self.assertEqual(result["payload"]["runtimeSettings"]["appEnv"], "local")
+        self.assertEqual(
+            result["payload"]["intakeResult"]["runtime"]["extractionMode"], "local"
+        )
         self.assertEqual(
             [entry["stage"] for entry in harness.execution_log],
             ["intake", "extraction", "validation", "tax_mapping", "compliance", "finalize"],
@@ -48,6 +53,30 @@ class AgentOrchestrationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["correlationId"], "unit-test-001")
+
+    def test_queue_human_review_mode_pauses_pipeline(self):
+        pipeline = AgentPipeline(
+            settings=AgentSettings(human_review_mode=HUMAN_REVIEW_MODE_QUEUE)
+        )
+
+        result = pipeline.run(
+            {
+                "correlationId": "unit-test-review-001",
+                "tenantId": "tenant-001",
+                "taxpayerId": "taxpayer-123",
+                "documentName": "W2.pdf",
+                "blobUri": "https://example.blob.core.windows.net/raw-w2/W2.pdf",
+                "taxYear": 2024,
+                "mockExtractionOverrides": {"employerEIN": None},
+            }
+        )
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["nextStep"], "awaiting_human_decision")
+        self.assertEqual(
+            [entry["stage"] for entry in pipeline.execution_log],
+            ["intake", "extraction", "validation", "human_review", "await_human_review"],
+        )
 
 
 if __name__ == "__main__":
