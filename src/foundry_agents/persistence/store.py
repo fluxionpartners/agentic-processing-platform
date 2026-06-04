@@ -2,7 +2,7 @@ import json
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from foundry_agents.config import (
     AgentSettings,
@@ -23,6 +23,10 @@ class TaxFactStore(ABC):
     def save(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Persist a governed tax fact record and return storage metadata."""
 
+    @abstractmethod
+    def load(self, record_id: str, partition_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Retrieve a persisted checkpoint or state record by ID."""
+
 
 class DisabledTaxFactStore(TaxFactStore):
     def save(self, record: Dict[str, Any]) -> Dict[str, Any]:
@@ -31,6 +35,9 @@ class DisabledTaxFactStore(TaxFactStore):
             "reason": "TAX_FACT_PERSISTENCE_MODE=disabled",
             "recordId": record["recordId"],
         }
+
+    def load(self, record_id: str, partition_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        return None
 
 
 class LocalJsonTaxFactStore(TaxFactStore):
@@ -54,9 +61,21 @@ class LocalJsonTaxFactStore(TaxFactStore):
             "path": str(path),
         }
 
+    def load(self, record_id: str, partition_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        safe_id = _safe_path_part(record_id)
+        for path in self.root_path.rglob(f"{safe_id}.json"):
+            if path.is_file():
+                try:
+                    return json.loads(path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    return None
+        return None
+
 
 class CosmosTaxFactStore(TaxFactStore):
     """Azure Cosmos DB store for governed tax fact checkpoints."""
+
+    _client_cache: Dict[Any, Any] = {}
 
     def __init__(self, settings: AgentSettings) -> None:
         self.settings = settings
@@ -75,7 +94,35 @@ class CosmosTaxFactStore(TaxFactStore):
             "etag": response.get("_etag") if isinstance(response, dict) else None,
         }
 
+    def load(self, record_id: str, partition_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        container = self._get_container()
+        try:
+            if partition_key:
+                return container.read_item(item=record_id, partition_key=partition_key)
+            else:
+                query = "SELECT * FROM c WHERE c.id = @id"
+                parameters = [{"name": "@id", "value": record_id}]
+                items = list(container.query_items(
+                    query=query,
+                    parameters=parameters,
+                    enable_cross_partition_query=True
+                ))
+                return items[0] if items else None
+        except Exception as exc:
+            if getattr(exc, "status_code", None) == 404:
+                return None
+            raise
+
     def _get_container(self) -> Any:
+        cache_key = (
+            self.settings.cosmos_endpoint,
+            self.settings.cosmos_database_name,
+            self.settings.cosmos_container_name,
+            self.settings.cosmos_key,
+        )
+        if cache_key in self._client_cache:
+            return self._client_cache[cache_key]
+
         try:
             from azure.cosmos import CosmosClient
             from azure.identity import DefaultAzureCredential
@@ -92,7 +139,9 @@ class CosmosTaxFactStore(TaxFactStore):
             credential=credential,
         )
         database = client.get_database_client(self.settings.cosmos_database_name)
-        return database.get_container_client(self.settings.cosmos_container_name)
+        container = database.get_container_client(self.settings.cosmos_container_name)
+        self._client_cache[cache_key] = container
+        return container
 
 
 def persist_tax_pipeline_state(

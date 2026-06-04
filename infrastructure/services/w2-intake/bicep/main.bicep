@@ -3,6 +3,11 @@ param namePrefix string = 'taxai'
 param location string = resourceGroup().location
 param environment string = 'dev'
 
+@description('Name prefix for all resources')
+param namePrefix string = 'taxai'
+param location string = resourceGroup().location
+param environment string = 'dev'
+
 var storageAccountName = toLower('${namePrefix}${environment}stg')
 var apiMgmtName = toLower('${namePrefix}${environment}apim')
 var functionAppName = toLower('${namePrefix}${environment}fn')
@@ -11,6 +16,7 @@ var keyVaultName = toLower('${namePrefix}${environment}kv')
 var serviceBusName = toLower('${namePrefix}${environment}sb')
 var logWorkspaceName = toLower('${namePrefix}${environment}law')
 var appInsightsName = toLower('${namePrefix}${environment}ai')
+var cosmosAccountName = toLower('${namePrefix}${environment}cosmos')
 var containerName = 'raw-w2'
 var serviceBusQueueName = 'w2-ingestion-queue'
 var apiManagementPublisherName = 'TaxAI Publisher'
@@ -203,10 +209,26 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
           value: 'true'
         }
+        {
+          name: 'TAX_FACT_PERSISTENCE_MODE'
+          value: 'cosmos'
+        }
+        {
+          name: 'AZURE_COSMOS_ENDPOINT'
+          value: cosmosAccount.properties.documentEndpoint
+        }
+        {
+          name: 'AZURE_COSMOS_DATABASE_NAME'
+          value: 'tax-intelligence'
+        }
+        {
+          name: 'AZURE_COSMOS_CONTAINER_NAME'
+          value: 'tax-facts'
+        }
       ]
     }
   }
-  dependsOn: [appServicePlan, storageAccount, serviceBusAuthRule, appInsights]
+  dependsOn: [appServicePlan, storageAccount, serviceBusAuthRule, appInsights, cosmosAccount]
 }
 
 output storageAccountName string = storageAccount.name
@@ -217,6 +239,64 @@ output serviceBusName string = serviceBus.name
 output serviceBusQueueName string = serviceBusQueue.name
 output functionAppName string = functionApp.name
 output apiManagementName string = apiManagement.name
+output cosmosAccountName string = cosmosAccount.name
+
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+  name: cosmosAccountName
+  location: location
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+        isZoneRedundant: false
+      }
+    ]
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+  }
+}
+
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+  parent: cosmosAccount
+  name: 'tax-intelligence'
+  properties: {
+    resource: {
+      id: 'tax-intelligence'
+    }
+  }
+}
+
+resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'tax-facts'
+  properties: {
+    resource: {
+      id: 'tax-facts'
+      partitionKey: {
+        paths: [
+          '/tenantId'
+        ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
+resource sqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, functionApp.id, '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: functionApp.identity.principalId
+    scope: cosmosAccount.id
+  }
+}
 
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 var serviceBusConnectionString = listKeys(serviceBusAuthRule.id, serviceBusAuthRule.apiVersion).primaryConnectionString

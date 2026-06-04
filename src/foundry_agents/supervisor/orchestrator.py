@@ -140,6 +140,79 @@ class SupervisorOrchestrator:
         """Record durable checkpoint metadata for resume and audit visibility."""
         self.state.setdefault("persistenceCheckpoints", []).append(checkpoint_result)
 
+    def rehydrate_pipeline(self, checkpoint_record: Dict[str, Any]) -> None:
+        """Rehydrate pipeline state from a saved checkpoint."""
+        self.correlation_id = checkpoint_record.get("correlationId")
+        self.pipeline_id = checkpoint_record.get("pipelineId")
+        self.state = {
+            "pipelineId": self.pipeline_id,
+            "correlationId": self.correlation_id,
+            "tenantId": checkpoint_record.get("tenantId"),
+            "taxpayerId": checkpoint_record.get("taxpayerId"),
+            "documentName": checkpoint_record.get("document", {}).get("documentName"),
+            "blobUri": checkpoint_record.get("document", {}).get("blobUri"),
+            "taxYear": checkpoint_record.get("taxYear"),
+            "stage": checkpoint_record.get("checkpointStage"),
+            "status": checkpoint_record.get("lifecycleStatus"),
+            "createdAt": checkpoint_record.get("createdAt"),
+            "updatedAt": checkpoint_record.get("updatedAt"),
+            "runtimeSettings": checkpoint_record.get("governance", {}),
+        }
+
+        if "persistenceCheckpoints" in checkpoint_record:
+            self.state["persistenceCheckpoints"] = checkpoint_record["persistenceCheckpoints"]
+
+        if checkpoint_record.get("document") and checkpoint_record["document"].get("sourceStatus"):
+            self.state["intakeResult"] = {
+                "correlationId": self.correlation_id,
+                "blobUri": checkpoint_record["document"].get("blobUri"),
+                "intakeStatus": checkpoint_record["document"].get("sourceStatus"),
+                "intakeTimestamp": checkpoint_record.get("createdAt"),
+                "nextStep": "extraction",
+            }
+
+        if "extraction" in checkpoint_record and checkpoint_record["extraction"].get("status"):
+            self.state["extractionResult"] = {
+                "extractionStatus": checkpoint_record["extraction"]["status"],
+                "source": checkpoint_record["extraction"].get("source"),
+                "extractedData": checkpoint_record["extraction"].get("extractedData"),
+                "fieldConfidence": checkpoint_record["extraction"].get("fieldConfidence"),
+                "overallConfidence": checkpoint_record["extraction"].get("overallConfidence"),
+                "extractionTimestamp": checkpoint_record["extraction"].get("extractionTimestamp"),
+            }
+        if "validation" in checkpoint_record and checkpoint_record["validation"].get("status"):
+            self.state["validationResult"] = {
+                "validationStatus": checkpoint_record["validation"]["status"],
+                "needsReview": checkpoint_record["validation"].get("needsReview"),
+                "reviewReason": checkpoint_record["validation"].get("reviewReason"),
+                "issues": checkpoint_record["validation"].get("issues"),
+                "warnings": checkpoint_record["validation"].get("warnings"),
+            }
+        if "humanReview" in checkpoint_record and checkpoint_record["humanReview"].get("status") is not None:
+            status = checkpoint_record["humanReview"]["status"]
+            next_step = "tax_mapping" if status in {"approved", "completed"} else "awaiting_human_decision"
+            self.state["humanReviewResult"] = {
+                "reviewStatus": status,
+                "reviewReason": checkpoint_record["humanReview"].get("reason"),
+                "assignedQueue": checkpoint_record["humanReview"].get("assignedQueue"),
+                "submittedForReview": checkpoint_record["humanReview"].get("submittedForReview"),
+                "nextStep": next_step,
+            }
+        if "taxPlanning" in checkpoint_record and checkpoint_record["taxPlanning"].get("mappingStatus"):
+            self.state["mappingResult"] = {
+                "mappingStatus": checkpoint_record["taxPlanning"]["mappingStatus"],
+                "mappingProfile": checkpoint_record["taxPlanning"].get("mappingProfile"),
+                "normalizedTaxFacts": checkpoint_record["taxPlanning"].get("normalizedTaxFacts"),
+                "form1040": checkpoint_record["taxPlanning"].get("form1040"),
+            }
+        if "compliance" in checkpoint_record and checkpoint_record["compliance"].get("status"):
+            self.state["finalResult"] = {
+                "complianceStatus": checkpoint_record["compliance"]["status"],
+                "complianceMode": checkpoint_record["compliance"].get("mode"),
+                "checks": checkpoint_record["compliance"].get("checks"),
+                "auditEvent": checkpoint_record["compliance"].get("auditEvent"),
+            }
+
     def await_human_review(self, review_result: Dict[str, Any]) -> Dict[str, Any]:
         """Pause the pipeline until a human decision is recorded."""
         self.state["stage"] = "awaiting_human_review"
