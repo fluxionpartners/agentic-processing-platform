@@ -1,0 +1,125 @@
+{
+  "version": "1.0.0",
+  "toolset": "foundry-w2-tax-pipeline",
+  "description": "Foundry/MCP-ready tool definitions backed by governed Python W-2 agent workers.",
+  "tools": [
+    {
+      "name": "run_w2_pipeline",
+      "description": "Run the complete W-2 intake, extraction, validation, review, tax mapping, compliance, and persistence pipeline.",
+      "input_schema": {
+        "type": "object",
+        "required": ["tenantId", "taxpayerId", "documentName", "blobUri", "taxYear"],
+        "properties": {
+          "correlationId": {"type": "string"},
+          "tenantId": {"type": "string"},
+          "taxpayerId": {"type": "string"},
+          "documentName": {"type": "string"},
+          "blobUri": {"type": "string"},
+          "taxYear": {"type": "integer"},
+          "mockExtractionOverrides": {"type": "object"}
+        }
+      }
+    },
+    {
+      "name": "start_w2_pipeline",
+      "description": "Create initial orchestration state for a W-2 intake event.",
+      "input_schema": {
+        "type": "object",
+        "required": ["tenantId", "taxpayerId", "documentName", "blobUri", "taxYear"],
+        "properties": {
+          "correlationId": {"type": "string"},
+          "tenantId": {"type": "string"},
+          "taxpayerId": {"type": "string"},
+          "documentName": {"type": "string"},
+          "blobUri": {"type": "string"},
+          "taxYear": {"type": "integer"}
+        }
+      }
+    },
+    {
+      "name": "process_w2_intake",
+      "description": "Accept an already-uploaded W-2 document event and return the extraction routing metadata.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "extract_w2_document",
+      "description": "Extract normalized W-2 data from the uploaded document using local or Azure Document Intelligence mode.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "validate_w2_facts",
+      "description": "Validate extracted W-2 facts and decide whether human review is required.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "submit_w2_human_review",
+      "description": "Create or route a human review packet for validation failures or low-confidence extraction.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "map_w2_tax_facts",
+      "description": "Map W-2 data to 1040-ready fields and reusable tax planning facts.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "evaluate_w2_compliance",
+      "description": "Evaluate compliance controls and produce an audit event envelope.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
+      "name": "persist_w2_pipeline_checkpoint",
+      "description": "Persist a governed pipeline checkpoint for resume, audit, and downstream tax planning.",
+      "input_schema": {
+        "type": "object",
+        "required": ["state", "checkpointStage"],
+        "properties": {
+          "checkpointStage": {"type": "string"},
+          "state": {"$ref": "#/definitions/pipelineState"}
+        }
+      }
+    },
+    {
+      "name": "persist_completed_w2_pipeline",
+      "description": "Persist the governed final pipeline state.",
+      "input_schema": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {"$ref": "#/definitions/pipelineState"}
+        }
+      }
+    },
+    {
+      "name": "get_runtime_configuration",
+      "description": "Return non-secret runtime settings used by the W-2 orchestration.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "definitions": {
+    "pipelineState": {
+      "type": "object",
+      "required": ["correlationId"],
+      "properties": {
+        "pipelineId": {"type": "string"},
+        "correlationId": {"type": "string"},
+        "tenantId": {"type": "string"},
+        "taxpayerId": {"type": "string"},
+        "documentName": {"type": "string"},
+        "blobUri": {"type": "string"},
+        "taxYear": {"type": "integer"},
+        "stage": {"type": "string"},
+        "status": {"type": "string"},
+        "intakeResult": {"type": "object"},
+        "extractionResult": {"type": "object"},
+        "validationResult": {"type": "object"},
+        "humanReviewResult": {"type": "object"},
+        "mappingResult": {"type": "object"},
+        "finalResult": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

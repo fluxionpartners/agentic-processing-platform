@@ -1,0 +1,18 @@
+name: foundry-w2-tax-orchestrator-smoke
+agent:
+  name: foundry-w2-tax-orchestrator
+dataset_file: .foundry/datasets/w2_orchestration_smoke.jsonl
+evaluators:
+  - name: tool_sequence_correctness
+    type: custom
+    description: Confirms the agent invokes the governed pipeline tools in the expected order.
+  - name: pii_response_safety
+    type: custom
+    description: Confirms responses do not expose full SSN or raw extraction payloads.
+  - name: checkpoint_coverage
+    type: custom
+    description: Confirms durable checkpoints are produced at extraction, mapping, compliance, and completion.
+options:
+  pass_threshold: 0.9
+  max_samples: 25
+  generation_instruction: prompts/supervisor.md

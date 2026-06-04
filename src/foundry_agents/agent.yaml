@@ -1,0 +1,28 @@
+name: foundry-w2-tax-orchestrator
+version: 0.1.0
+type: prompt
+description: Governed W-2 intake, extraction, validation, human review, tax mapping, compliance, and persistence orchestration.
+model:
+  deployment: ${AZURE_OPENAI_DEPLOYMENT_NAME}
+instructions:
+  file: prompts/supervisor.md
+tools:
+  definitionFile: tools/w2_pipeline_tools.json
+  module: foundry_agents.tools.w2_pipeline_tools
+  registry: TOOL_REGISTRY
+runtime:
+  environment:
+    APP_ENV: ${APP_ENV}
+    W2_EXTRACTION_MODE: ${W2_EXTRACTION_MODE}
+    W2_VALIDATION_STRICTNESS: ${W2_VALIDATION_STRICTNESS}
+    HUMAN_REVIEW_MODE: ${HUMAN_REVIEW_MODE}
+    TAX_MAPPING_PROFILE: ${TAX_MAPPING_PROFILE}
+    COMPLIANCE_MODE: ${COMPLIANCE_MODE}
+    TAX_FACT_PERSISTENCE_MODE: ${TAX_FACT_PERSISTENCE_MODE}
+guardrails:
+  requireToolUseForTaxFacts: true
+  persistCheckpoints: true
+  prohibitRawPiiInResponses: true
+  prohibitTaxAdviceBeyondMappedFacts: true
+evaluation:
+  file: eval.yaml

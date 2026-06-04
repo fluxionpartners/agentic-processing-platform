@@ -66,6 +66,7 @@ class AgentSettings:
     low_confidence_threshold: float = 0.85
     require_masked_pii_in_logs: bool = True
     audit_event_enabled: bool = True
+    azure_openai_deployment_name: str = ""
     document_intelligence_endpoint: str = ""
     document_intelligence_key: str = ""
     document_intelligence_model_id: str = "prebuilt-tax.us.w2"
@@ -97,6 +98,7 @@ class AgentSettings:
             "lowConfidenceThreshold": self.low_confidence_threshold,
             "requireMaskedPiiInLogs": self.require_masked_pii_in_logs,
             "auditEventEnabled": self.audit_event_enabled,
+            "azureOpenAIDeploymentName": self.azure_openai_deployment_name,
             "documentIntelligenceModelId": self.document_intelligence_model_id,
             "taxFactPersistenceMode": self.tax_fact_persistence_mode,
             "cosmosDatabaseName": self.cosmos_database_name,
@@ -153,6 +155,7 @@ def load_agent_settings(env: Optional[Dict[str, str]] = None) -> AgentSettings:
         low_confidence_threshold=_read_float(values, "LOW_CONFIDENCE_THRESHOLD", 0.85),
         require_masked_pii_in_logs=_read_bool(values, "REQUIRE_MASKED_PII_IN_LOGS", True),
         audit_event_enabled=_read_bool(values, "AUDIT_EVENT_ENABLED", True),
+        azure_openai_deployment_name=values.get("AZURE_OPENAI_DEPLOYMENT_NAME", ""),
         document_intelligence_endpoint=values.get("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", ""),
         document_intelligence_key=values.get("AZURE_DOCUMENT_INTELLIGENCE_KEY", ""),
         document_intelligence_model_id=values.get(

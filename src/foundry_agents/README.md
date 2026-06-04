@@ -41,6 +41,7 @@ inject these values per environment; application code reads them through
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `APP_ENV` | `local` | Runtime environment: `local`, `dev`, `test`, `uat`, or `prod`. |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | empty | Azure OpenAI model deployment used by the Foundry prompt-agent manifest. |
 | `W2_EXTRACTION_MODE` | `local` | `local` uses deterministic development data. `document-intelligence` selects the Azure AI Document Intelligence adapter. |
 | `W2_VALIDATION_STRICTNESS` | `standard` | `standard` applies core W-2 rules. `strict` adds additional review-oriented checks. |
 | `HUMAN_REVIEW_MODE` | `local-auto-approve` | `local-auto-approve` lets local tests continue. `queue` and `manual` pause the pipeline for human decision. |
@@ -115,6 +116,29 @@ Agents stay thin: they load settings, select the adapter, and add orchestration
 metadata. This keeps local mock behavior and production-equivalent behavior
 aligned behind the same contracts.
 
+## Foundry Binding Layer
+
+The Foundry-facing layer connects LLM orchestration to the governed Python
+workers:
+
+- `agent.yaml` defines the prompt-agent configuration, model deployment
+  placeholder, prompt file, tool manifest, and evaluation entry point.
+- `prompts/*.md` contains system instructions for the supervisor and specialist
+  agent roles.
+- `tools/w2_pipeline_tools.py` exposes callable Python functions backed by the
+  existing agent workers and persistence boundary.
+- `tools/w2_pipeline_tools.json` describes those functions as Foundry/MCP-ready
+  tool schemas.
+- `.foundry/agent-metadata.yaml` stores local project metadata, prompt/tool
+  references, and evaluation suite references.
+- `eval.yaml` and `.foundry/datasets/w2_orchestration_smoke.jsonl` seed the
+  first smoke evaluation suite.
+
+The LLM layer should decide how to coordinate, explain, and recover. It should
+not invent tax facts or bypass tools. Regulated actions stay in the Python
+tooling layer so validation, mapping, compliance, and persistence remain
+deterministic and testable.
+
 ## Governed Tax Fact Persistence
 
 Tax planning needs durable facts, but W-2 records are restricted tax PII. The
@@ -174,6 +198,22 @@ foundry_agents/
 |   `-- agent.py
 |-- persistence/
 |   `-- store.py
+|-- prompts/
+|   |-- supervisor.md
+|   |-- extraction.md
+|   |-- validation.md
+|   |-- human_review.md
+|   |-- tax_mapping.md
+|   `-- compliance.md
+|-- tools/
+|   |-- w2_pipeline_tools.json
+|   `-- w2_pipeline_tools.py
+|-- .foundry/
+|   |-- agent-metadata.yaml
+|   `-- datasets/
+|       `-- w2_orchestration_smoke.jsonl
+|-- agent.yaml
+|-- eval.yaml
 |-- config.py
 |-- domain.py
 |-- pipeline.py

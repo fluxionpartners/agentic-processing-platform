@@ -1,0 +1,25 @@
+schemaVersion: 1
+agent:
+  name: foundry-w2-tax-orchestrator
+  type: prompt
+  sourceRoot: src/foundry_agents
+defaultEnvironment: dev
+environments:
+  dev:
+    azd:
+      environmentName: dev
+    prompts:
+      supervisor: prompts/supervisor.md
+      extraction: prompts/extraction.md
+      validation: prompts/validation.md
+      humanReview: prompts/human_review.md
+      taxMapping: prompts/tax_mapping.md
+      compliance: prompts/compliance.md
+    tools:
+      definitionFile: tools/w2_pipeline_tools.json
+      pythonModule: foundry_agents.tools.w2_pipeline_tools
+      registry: TOOL_REGISTRY
+    evaluationSuites:
+      - name: foundry-w2-tax-orchestrator-smoke
+        localDataset: .foundry/datasets/w2_orchestration_smoke.jsonl
+        localConfig: eval.yaml

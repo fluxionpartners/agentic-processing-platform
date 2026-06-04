@@ -69,6 +69,7 @@ class AgentConfigTests(unittest.TestCase):
                 "LOW_CONFIDENCE_THRESHOLD": "0.9",
                 "REQUIRE_MASKED_PII_IN_LOGS": "true",
                 "AUDIT_EVENT_ENABLED": "true",
+                "AZURE_OPENAI_DEPLOYMENT_NAME": "gpt-4.1-prod",
                 "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
                 "TAX_FACT_PERSISTENCE_MODE": TAX_FACT_PERSISTENCE_COSMOS,
                 "AZURE_COSMOS_ENDPOINT": "https://example.documents.azure.com:443/",
@@ -82,6 +83,11 @@ class AgentConfigTests(unittest.TestCase):
         self.assertEqual(settings.human_review_mode, HUMAN_REVIEW_MODE_QUEUE)
         self.assertEqual(settings.compliance_mode, COMPLIANCE_MODE_REGULATED)
         self.assertEqual(settings.low_confidence_threshold, 0.9)
+        self.assertEqual(settings.azure_openai_deployment_name, "gpt-4.1-prod")
+        self.assertEqual(
+            settings.as_runtime_metadata()["azureOpenAIDeploymentName"],
+            "gpt-4.1-prod",
+        )
         self.assertEqual(settings.tax_fact_persistence_mode, TAX_FACT_PERSISTENCE_COSMOS)
         self.assertEqual(settings.cosmos_database_name, "tax-intelligence")
         self.assertEqual(settings.cosmos_container_name, "tax-facts")
