@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "W2_STORAGE_CONNECTION_STRING": "<Your Azure Storage connection string>",
+    "W2_CONTAINER_NAME": "raw-w2",
+    "W2_SERVICEBUS_CONNECTION_STRING": "<Your Service Bus connection string>",
+    "W2_SERVICEBUS_QUEUE_NAME": "w2-ingestion-queue"
+  }
+}

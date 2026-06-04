@@ -1,0 +1,2 @@
+# Foundry Agent dependencies
+# Later: foundry SDK, LLM frameworks, etc.
