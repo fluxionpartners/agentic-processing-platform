@@ -1,0 +1,189 @@
+# GitHub Actions Deployment
+
+This repository is a single solution with multiple deployable units. The
+workflow in `.github/workflows/deploy-platform.yml` validates the whole solution
+once, then deploys each Azure host independently.
+
+For a step-by-step setup intended for someone deploying their own copy of the
+repository, see [Deploy Your Own Environment](deploy-your-own.md).
+
+## Deployment Model
+
+```text
+GitHub Actions
+|-- validate repo
+|-- package W2 intake function
+|-- package Foundry agent artifacts
+|-- provision Azure infrastructure
+|-- deploy W2 intake Function App
+|-- deploy Foundry tools Function App
+|-- register Foundry agent, when registration is enabled
+`-- run smoke tests
+```
+
+## Bootstrap Script
+
+The bootstrap script can create the Azure resource group and configure
+everything GitHub Actions needs:
+
+```powershell
+.\scripts\github\bootstrap-github-actions.ps1 `
+  -SubscriptionId "<subscription-id>" `
+  -TenantId "<tenant-id>" `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -Environment dev `
+  -Location eastus `
+  -NamePrefix taxai
+```
+
+The script uses Azure CLI and GitHub CLI to:
+
+- create or reuse the resource group
+- create or reuse an Entra app registration
+- create or reuse a service principal
+- create a GitHub Actions federated credential for the selected GitHub Environment
+- assign `Contributor` on the resource group
+- create the GitHub Environment
+- set GitHub environment secrets
+- set GitHub environment variables
+
+Use `-GrantUserAccessAdministrator` only when the workflow must create Azure RBAC
+role assignments. Keep that permission scoped to the resource group.
+
+## Required Local Tools
+
+The bootstrap script requires:
+
+- Azure CLI, authenticated with `az login`
+- GitHub CLI, authenticated with `gh auth login`
+
+## GitHub Secrets
+
+The bootstrap script configures these environment secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+## GitHub Variables
+
+The bootstrap script configures these environment variables:
+
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_LOCATION`
+- `NAME_PREFIX`
+
+The workflow also creates or reuses the configured resource group before
+deploying Bicep.
+
+## Secret Management
+
+The W2 intake Bicep creates Azure Key Vault and stores connection-string secrets
+there instead of placing secret values directly in Function App settings.
+
+Current scripted secret flow:
+
+```text
+Storage connection string
+  -> Key Vault secret: w2-storage-connection-string
+  -> Function App setting: AzureWebJobsStorage
+  -> Function App setting: W2_STORAGE_CONNECTION_STRING
+
+Service Bus connection string
+  -> Key Vault secret: w2-servicebus-connection-string
+  -> Function App setting: W2_SERVICEBUS_CONNECTION_STRING
+```
+
+The Function App uses a system-assigned managed identity. Bicep grants that
+identity Key Vault `get` and `list` permissions for secrets, and the app settings
+use Key Vault references:
+
+```text
+@Microsoft.KeyVault(SecretUri=<secret-uri>)
+```
+
+Cosmos DB access uses managed identity and Cosmos DB SQL RBAC, so no Cosmos key
+is required for production runtime.
+
+## Environments
+
+The workflow supports `dev`, `test`, `uat`, and `prod` through manual
+`workflow_dispatch` inputs. Pushes to `main` default to `dev`.
+
+Use GitHub Environments for approval gates and environment-specific secrets or
+variables. A common setup is:
+
+```text
+dev   - no approval
+test  - optional approval
+uat   - business approval
+prod  - required approval
+```
+
+## Current Hosts
+
+The workflow fully supports:
+
+- `src/services/w2-intake` deployed to the Function App created by
+  `infrastructure/services/w2-intake/bicep/main.bicep`.
+- `src/services/foundry-tools` deployed to the Function App created by
+  `infrastructure/services/foundry-tools/bicep/main.bicep`.
+
+The Foundry tools infrastructure also provisions the Blob container used for
+draft Form 1040 artifacts and configures the tools Function App for Blob-backed
+artifact storage.
+
+The workflow still has a guarded hook for:
+
+- Foundry agent registration from `src/foundry_agents/agent.yaml`
+
+That hook stays inactive until `deploy_foundry_registration` is selected and the
+Foundry project endpoint/registration command is finalized.
+
+## Deployed Azure Hosts
+
+```text
+W2 intake Function App
+  Receives document-upload requests and publishes ingestion events.
+
+Foundry tools Function App
+  Exposes HTTP endpoints for the Foundry supervisor agent tools and stores
+  generated draft 1040 artifacts.
+
+Azure AI Foundry supervisor agent
+  Registered from agent.yaml, prompts, tool schemas, and eval configuration.
+```
+
+The Foundry tools host packages `src/services/foundry-tools` together with the
+shared `src/foundry_agents` package, so every HTTP endpoint can call
+`TOOL_REGISTRY` and the governed Python agent workers.
+
+Important tool endpoints include:
+
+```text
+POST /api/run-w2-pipeline
+POST /api/extract-w2-document
+POST /api/map-w2-tax-facts
+POST /api/generate-form-1040-document
+POST /api/evaluate-w2-compliance
+```
+
+`src/services/foundry-tools/openapi.json` documents the HTTP endpoint binding.
+Its `operationId` values match the logical tool names in
+`src/foundry_agents/tools/w2_pipeline_tools.json`.
+
+## Why This Is One Solution And Multiple Hosts
+
+The repo is the system boundary. Each Azure host is a deployment boundary.
+
+```text
+One repo commit
+|-- deploys W2 intake host
+|-- deploys tool host
+|-- registers Foundry agent
+`-- keeps all versions traceable together
+```
+
+This keeps the business capability layer and Foundry layer together in source
+control while still allowing each runtime to scale, secure, and deploy
+independently.

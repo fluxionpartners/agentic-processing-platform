@@ -10,6 +10,8 @@ if str(SRC_ROOT) not in sys.path:
 from foundry_agents.config import (
     APP_ENV_PROD,
     COMPLIANCE_MODE_REGULATED,
+    FORM_1040_ARTIFACT_MODE_BLOB,
+    FORM_1040_GENERATION_MODE_HTML,
     HUMAN_REVIEW_MODE_QUEUE,
     EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
     EXTRACTION_MODE_LOCAL,
@@ -75,6 +77,10 @@ class AgentConfigTests(unittest.TestCase):
                 "AZURE_COSMOS_ENDPOINT": "https://example.documents.azure.com:443/",
                 "AZURE_COSMOS_DATABASE_NAME": "tax-intelligence",
                 "AZURE_COSMOS_CONTAINER_NAME": "tax-facts",
+                "FORM_1040_GENERATION_MODE": FORM_1040_GENERATION_MODE_HTML,
+                "FORM_1040_ARTIFACT_MODE": FORM_1040_ARTIFACT_MODE_BLOB,
+                "FORM_1040_STORAGE_ACCOUNT_URL": "https://example.blob.core.windows.net/",
+                "FORM_1040_BLOB_CONTAINER_NAME": "tax-artifacts",
                 "ALLOW_FULL_PII_PERSISTENCE": "false",
             }
         )
@@ -91,6 +97,13 @@ class AgentConfigTests(unittest.TestCase):
         self.assertEqual(settings.tax_fact_persistence_mode, TAX_FACT_PERSISTENCE_COSMOS)
         self.assertEqual(settings.cosmos_database_name, "tax-intelligence")
         self.assertEqual(settings.cosmos_container_name, "tax-facts")
+        self.assertEqual(settings.form_1040_generation_mode, FORM_1040_GENERATION_MODE_HTML)
+        self.assertEqual(settings.form_1040_artifact_mode, FORM_1040_ARTIFACT_MODE_BLOB)
+        self.assertEqual(settings.form_1040_blob_container_name, "tax-artifacts")
+        self.assertEqual(
+            settings.form_1040_storage_account_url,
+            "https://example.blob.core.windows.net/",
+        )
         self.assertFalse(settings.allow_full_pii_persistence)
 
     def test_prod_cannot_use_local_extraction(self):
@@ -132,6 +145,26 @@ class AgentConfigTests(unittest.TestCase):
                     "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
                 }
             )
+
+    def test_prod_cannot_use_local_form_artifacts(self):
+        with self.assertRaisesRegex(ValueError, "FORM_1040_ARTIFACT_MODE=local-file"):
+            load_agent_settings(
+                {
+                    "APP_ENV": APP_ENV_PROD,
+                    "W2_EXTRACTION_MODE": EXTRACTION_MODE_DOCUMENT_INTELLIGENCE,
+                    "HUMAN_REVIEW_MODE": HUMAN_REVIEW_MODE_QUEUE,
+                    "COMPLIANCE_MODE": COMPLIANCE_MODE_REGULATED,
+                    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "https://example.cognitiveservices.azure.com/",
+                    "TAX_FACT_PERSISTENCE_MODE": TAX_FACT_PERSISTENCE_COSMOS,
+                    "AZURE_COSMOS_ENDPOINT": "https://example.documents.azure.com:443/",
+                    "AZURE_COSMOS_DATABASE_NAME": "tax-intelligence",
+                    "AZURE_COSMOS_CONTAINER_NAME": "tax-facts",
+                }
+            )
+
+    def test_blob_form_artifacts_require_storage_connection(self):
+        with self.assertRaisesRegex(ValueError, "FORM_1040_STORAGE_CONNECTION_STRING"):
+            load_agent_settings({"FORM_1040_ARTIFACT_MODE": FORM_1040_ARTIFACT_MODE_BLOB})
 
     def test_cosmos_persistence_requires_endpoint_database_and_container(self):
         with self.assertRaisesRegex(ValueError, "AZURE_COSMOS_ENDPOINT"):

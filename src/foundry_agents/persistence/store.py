@@ -183,6 +183,7 @@ def build_tax_fact_record(
     validation_result = pipeline_state.get("validationResult", {})
     human_review_result = pipeline_state.get("humanReviewResult")
     mapping_result = pipeline_state.get("mappingResult", {})
+    form_generation_result = pipeline_state.get("formGenerationResult", {})
     compliance_result = pipeline_state.get("finalResult", {})
     extracted_data = _sanitize_extracted_data(
         extraction_result.get("extractedData", {}),
@@ -235,6 +236,17 @@ def build_tax_fact_record(
             "normalizedTaxFacts": mapping_result.get("normalizedTaxFacts", {}),
             "form1040": mapping_result.get("form1040", {}),
         },
+        "form1040Document": {
+            "status": form_generation_result.get("generationStatus"),
+            "generationMode": form_generation_result.get("generationMode"),
+            "artifactMode": form_generation_result.get("artifactMode"),
+            "templateVersion": form_generation_result.get("templateVersion"),
+            "documentType": form_generation_result.get("documentType"),
+            "taxYear": form_generation_result.get("taxYear"),
+            "fieldValues": form_generation_result.get("fieldValues", {}),
+            "artifact": form_generation_result.get("artifact", {}),
+            "generatedAt": form_generation_result.get("generatedAt"),
+        },
         "compliance": {
             "status": compliance_result.get("complianceStatus"),
             "mode": compliance_result.get("complianceMode"),
@@ -265,6 +277,7 @@ def _lifecycle_status(pipeline_state: Dict[str, Any], checkpoint_stage: str) -> 
         "human_review": "reviewed",
         "await_human_review": "awaiting_human_review",
         "tax_mapping": "mapped",
+        "form_generation": "form_generated",
         "compliance": "compliance_evaluated",
         "complete": "complete",
     }

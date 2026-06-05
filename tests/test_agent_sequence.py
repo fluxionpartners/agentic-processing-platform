@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from foundry_agents.config import AgentSettings, EXTRACTION_MODE_DOCUMENT_INTELL
 from foundry_agents.compliance.agent import ComplianceAgent
 from foundry_agents.extraction.adapters import DocumentIntelligenceW2ExtractionAdapter
 from foundry_agents.extraction.agent import ExtractionAgent
+from foundry_agents.form_generation.agent import Form1040GenerationAgent
 from foundry_agents.tax_mapping.agent import TaxMappingAgent
 from foundry_agents.validation.agent import ValidationAgent
 
@@ -182,6 +184,31 @@ class AgentSequenceTests(unittest.TestCase):
             6500.00,
         )
 
+    def test_form_generation_outputs_1040_artifact(self):
+        extraction_result = ExtractionAgent.process({"correlationId": "corr-004a"})
+        mapping_result = TaxMappingAgent.process(
+            {"correlationId": "corr-004a", "extractionResult": extraction_result}
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = Form1040GenerationAgent.process(
+                {
+                    "correlationId": "corr-004a",
+                    "tenantId": "tenant-001",
+                    "taxpayerId": "taxpayer-123",
+                    "taxYear": 2024,
+                    "mappingResult": mapping_result,
+                },
+                AgentSettings(form_1040_artifact_path=temp_dir),
+            )
+            artifact_exists = Path(result["artifact"]["path"]).exists()
+
+        self.assertEqual(result["generationStatus"], "success")
+        self.assertEqual(result["documentType"], "irs-form-1040")
+        self.assertEqual(result["fieldValues"]["wagesLine1a"], "75000.00")
+        self.assertEqual(result["artifact"]["contentType"], "text/html")
+        self.assertTrue(artifact_exists)
+
     def test_compliance_outputs_audit_event(self):
         extraction_result = ExtractionAgent.process(
             {"correlationId": "corr-005", "blobUri": "https://example/w2.pdf"}
@@ -192,6 +219,17 @@ class AgentSequenceTests(unittest.TestCase):
         mapping_result = TaxMappingAgent.process(
             {"correlationId": "corr-005", "extractionResult": extraction_result}
         )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            form_generation_result = Form1040GenerationAgent.process(
+                {
+                    "correlationId": "corr-005",
+                    "tenantId": "tenant-001",
+                    "taxpayerId": "taxpayer-123",
+                    "taxYear": 2024,
+                    "mappingResult": mapping_result,
+                },
+                AgentSettings(form_1040_artifact_path=temp_dir),
+            )
 
         result = ComplianceAgent.process(
             {
@@ -203,6 +241,7 @@ class AgentSequenceTests(unittest.TestCase):
                 "extractionResult": extraction_result,
                 "validationResult": validation_result,
                 "mappingResult": mapping_result,
+                "formGenerationResult": form_generation_result,
             }
         )
 
@@ -211,6 +250,7 @@ class AgentSequenceTests(unittest.TestCase):
             result["auditEvent"]["eventType"], "TaxPipelineComplianceEvaluated"
         )
         self.assertTrue(result["checks"]["piiMaskedForLogs"])
+        self.assertTrue(result["checks"]["form1040Generated"])
 
 
 if __name__ == "__main__":

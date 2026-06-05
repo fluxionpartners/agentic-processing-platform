@@ -12,6 +12,7 @@ The agent orchestration follows a supervisor-worker pattern:
 - **Validation Agent** - applies W-2 business rules and confidence checks.
 - **Human Review Agent** - routes flagged records for human decision-making.
 - **Tax Mapping Agent** - maps data into 1040-ready and tax planning payloads.
+- **Form 1040 Generation Agent** - renders draft 1040 document artifacts from mapped facts.
 - **Compliance Agent** - applies final governance and compliance checks.
 - **Tax Fact Persistence** - checkpoints governed normalized tax facts for resiliency and later tax planning.
 
@@ -46,6 +47,13 @@ inject these values per environment; application code reads them through
 | `W2_VALIDATION_STRICTNESS` | `standard` | `standard` applies core W-2 rules. `strict` adds additional review-oriented checks. |
 | `HUMAN_REVIEW_MODE` | `local-auto-approve` | `local-auto-approve` lets local tests continue. `queue` and `manual` pause the pipeline for human decision. |
 | `TAX_MAPPING_PROFILE` | `us-federal-2024` | Selects the tax mapping profile. |
+| `FORM_1040_GENERATION_MODE` | `html-template` | Selects the Form 1040 renderer. Current mode creates a deterministic HTML draft artifact. |
+| `FORM_1040_TEMPLATE_VERSION` | `irs-1040-2024-html-v1` | Version label for the 1040 template binding used in generated artifacts. |
+| `FORM_1040_ARTIFACT_MODE` | `local-file` | `local-file` writes draft artifacts locally; `azure-blob` uploads artifacts to Blob Storage. |
+| `FORM_1040_ARTIFACT_PATH` | `.local_state/form-1040` | Local output folder for draft 1040 artifacts. This path is ignored by Git. |
+| `FORM_1040_BLOB_CONTAINER_NAME` | `tax-artifacts` | Blob container for generated tax document artifacts. |
+| `FORM_1040_STORAGE_ACCOUNT_URL` | empty | Blob service URL for managed-identity artifact uploads in `azure-blob` mode. |
+| `FORM_1040_STORAGE_CONNECTION_STRING` | empty | Optional storage connection for local/dev Blob uploads; Azure Functions can use the Key Vault-backed runtime storage setting. |
 | `COMPLIANCE_MODE` | `development` | `development` applies local controls. `regulated` enables stricter compliance checks. |
 | `LOW_CONFIDENCE_THRESHOLD` | `0.85` | Field-confidence threshold below which validation routes to review. |
 | `REQUIRE_MASKED_PII_IN_LOGS` | `true` | Requires masked SSN-like values in compliance checks. |
@@ -73,6 +81,8 @@ Production safety rules are enforced in configuration:
 - `APP_ENV=prod` cannot use `HUMAN_REVIEW_MODE=local-auto-approve`.
 - `APP_ENV=prod` cannot use `TAX_FACT_PERSISTENCE_MODE=local-json`.
 - `APP_ENV=prod` requires durable tax fact persistence.
+- `APP_ENV=prod` cannot use `FORM_1040_ARTIFACT_MODE=local-file`.
+- `FORM_1040_ARTIFACT_MODE=azure-blob` requires a storage account URL or storage connection string and a container name.
 
 For local development, use the repository-level `.env.example` as the safe
 template. Real `.env` files should stay local and are ignored by Git.
@@ -92,6 +102,7 @@ The agent sequence is implemented with configurable local and Azure-ready adapte
 - **Validation** applies required-field, EIN/SSN format, numeric amount, withholding, and confidence rules.
 - **Human Review** builds a review packet for blocking validation issues or low-confidence extraction.
 - **Tax Mapping** emits 1040-ready federal inputs plus reusable tax intelligence facts.
+- **Form 1040 Generation** renders a draft document artifact from mapped facts and records its storage metadata.
 - **Compliance** emits control results and an audit event envelope.
 - **Persistence** checkpoints governed tax fact records for downstream tax planning, resume support, and future analytics.
 
@@ -109,6 +120,7 @@ Each agent package exposes an adapter boundary:
 - **Validation** keeps W-2 rules behind a validation adapter so rule engines or policy services can replace local rules later.
 - **Human Review** switches between local auto-approve, queue-based review, and manual review adapters.
 - **Tax Mapping** uses a tax profile adapter, currently `us-federal-2024`.
+- **Form 1040 Generation** uses a document renderer and artifact storage adapter, currently HTML plus local file or Blob output.
 - **Compliance** keeps control evaluation and audit envelope creation behind a compliance adapter.
 - **Persistence** switches between disabled, local JSON, and Cosmos DB checkpoint stores.
 
@@ -129,6 +141,8 @@ workers:
   existing agent workers and persistence boundary.
 - `tools/w2_pipeline_tools.json` describes those functions as Foundry/MCP-ready
   tool schemas.
+- `src/services/foundry-tools` exposes the tool registry as HTTP-triggered Azure
+  Functions for Foundry tool binding.
 - `.foundry/agent-metadata.yaml` stores local project metadata, prompt/tool
   references, and evaluation suite references.
 - `eval.yaml` and `.foundry/datasets/w2_orchestration_smoke.jsonl` seed the
@@ -144,7 +158,8 @@ deterministic and testable.
 Tax planning needs durable facts, but W-2 records are restricted tax PII. The
 persistence boundary therefore upserts a governed record as the pipeline
 advances. The same record is checkpointed after intake, extraction, validation,
-human review when applicable, tax mapping, compliance, and completion.
+human review when applicable, tax mapping, Form 1040 generation, compliance,
+and completion.
 
 Each governed record contains:
 
@@ -153,6 +168,7 @@ Each governed record contains:
 - field confidence and validation status
 - human review summary when applicable
 - normalized tax planning facts and 1040-ready mapping output
+- generated Form 1040 draft artifact metadata
 - compliance/audit metadata
 - governance metadata, including sensitivity label and raw extraction policy
 - checkpoint stage and lifecycle status, such as `extracted`, `validated`, `mapped`, or `complete`
@@ -170,7 +186,7 @@ The default guardrails are:
 The extraction checkpoint is intentional: if the pipeline fails after Document
 Intelligence succeeds, the normalized W-2 facts have already been persisted and
 the document does not need to be re-analyzed just to resume downstream
-validation, review, mapping, or compliance work.
+validation, review, mapping, form generation, or compliance work.
 
 ## File Structure
 
@@ -193,6 +209,9 @@ foundry_agents/
 |-- tax_mapping/
 |   |-- adapters.py
 |   `-- agent.py
+|-- form_generation/
+|   |-- adapters.py
+|   `-- agent.py
 |-- compliance/
 |   |-- adapters.py
 |   `-- agent.py
@@ -204,6 +223,7 @@ foundry_agents/
 |   |-- validation.md
 |   |-- human_review.md
 |   |-- tax_mapping.md
+|   |-- form_generation.md
 |   `-- compliance.md
 |-- tools/
 |   |-- w2_pipeline_tools.json

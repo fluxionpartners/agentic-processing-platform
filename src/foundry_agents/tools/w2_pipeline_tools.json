@@ -62,8 +62,13 @@
       "input_schema": {"$ref": "#/definitions/pipelineState"}
     },
     {
+      "name": "generate_form_1040_document",
+      "description": "Generate a draft Form 1040 document artifact from mapped W-2 tax facts.",
+      "input_schema": {"$ref": "#/definitions/pipelineState"}
+    },
+    {
       "name": "evaluate_w2_compliance",
-      "description": "Evaluate compliance controls and produce an audit event envelope.",
+      "description": "Evaluate compliance controls for extraction, mapping, generated 1040 artifacts, and audit evidence.",
       "input_schema": {"$ref": "#/definitions/pipelineState"}
     },
     {
@@ -117,6 +122,7 @@
         "validationResult": {"type": "object"},
         "humanReviewResult": {"type": "object"},
         "mappingResult": {"type": "object"},
+        "formGenerationResult": {"type": "object"},
         "finalResult": {"type": "object"}
       },
       "additionalProperties": true

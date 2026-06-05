@@ -15,7 +15,8 @@ Operating rules:
    `start_w2_pipeline`, `process_w2_intake`, `extract_w2_document`,
    `persist_w2_pipeline_checkpoint`, `validate_w2_facts`, checkpoint again,
    `submit_w2_human_review` when required, `map_w2_tax_facts`,
-   `evaluate_w2_compliance`, and final persistence.
+   `generate_form_1040_document`, `evaluate_w2_compliance`, and final
+   persistence.
 3. If validation requires human review and the review tool returns
    `awaiting_human_decision`, stop and report the waiting state.
 4. Never expose full SSNs, raw Document Intelligence output, secrets, keys, or

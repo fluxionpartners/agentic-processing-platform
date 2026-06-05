@@ -27,6 +27,7 @@ class LocalComplianceAdapter(ComplianceAdapter):
         extraction_result = payload.get("extractionResult", {})
         validation_result = payload.get("validationResult", {})
         mapping_result = payload.get("mappingResult", {})
+        form_generation_result = payload.get("formGenerationResult", {})
         human_review_result = payload.get("humanReviewResult")
         extracted_data = extraction_result.get("extractedData", {})
 
@@ -37,6 +38,8 @@ class LocalComplianceAdapter(ComplianceAdapter):
             "humanReviewRecordedWhenRequired": not validation_result.get("needsReview")
             or bool(human_review_result),
             "taxMappingCompleted": mapping_result.get("mappingStatus") == "success",
+            "form1040Generated": form_generation_result.get("generationStatus") == "success",
+            "form1040ArtifactRecorded": bool(form_generation_result.get("artifact")),
             "piiMaskedForLogs": not self.settings.require_masked_pii_in_logs
             or str(extracted_data.get("employeeSSN", "")).startswith("XXX-XX-"),
             "retentionPolicyApplied": True,
@@ -58,6 +61,7 @@ class LocalComplianceAdapter(ComplianceAdapter):
             "complianceMode": self.settings.compliance_mode,
             "controlResults": compliance_checks,
             "validationStatus": validation_result.get("validationStatus"),
+            "form1040ArtifactId": form_generation_result.get("artifact", {}).get("artifactId"),
             "humanReviewStatus": human_review_result.get("reviewStatus")
             if human_review_result
             else None,

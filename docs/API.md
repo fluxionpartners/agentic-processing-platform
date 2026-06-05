@@ -1,420 +1,217 @@
 # API Documentation
 
-This document provides comprehensive API documentation for the Microsoft Foundry Tax Intelligence Platform services.
+This document describes the currently implemented HTTP boundaries.
 
-## Table of Contents
+## Hosts
 
-1. [W-2 Intake Service API](#w2-intake-service-api)
-2. [Agent Orchestration APIs](#agent-orchestration-apis)
-3. [Error Handling](#error-handling)
-4. [Authentication](#authentication)
-5. [Rate Limiting](#rate-limiting)
-6. [Examples](#examples)
+| Host | Purpose |
+| --- | --- |
+| W-2 intake Function App | Accepts uploaded W-2 documents and publishes ingestion events. |
+| Foundry tools Function App | Exposes governed tools for the Foundry supervisor agent. |
 
-## W-2 Intake Service API
+## W-2 Intake API
 
-The W-2 Intake Service is a secure HTTP endpoint for uploading W-2 documents and initiating the processing pipeline.
+### Upload W-2
 
-### Endpoint
-
-```
-POST https://{function-app}.azurewebsites.net/api/upload-w2
-```
-
-### Authentication
-
-Use API Management gateway with Azure Key Vault stored credentials or managed identities.
-
-### Request
-
-#### Headers
-
-```
+```http
+POST https://{w2-intake-function-host}/api/upload-w2
 Content-Type: application/json
-Authorization: Bearer {token}  (if required by API Management)
 ```
 
-#### Request Body
+Request body:
 
 ```json
 {
-  "tenantId": "string",
-  "taxpayerId": "string",
-  "documentName": "string",
-  "documentBase64": "string",
-  "metadata": {
-    "taxYear": 2024,
-    "uploadedBy": "string",
-    "source": "string"
+  "correlationId": "optional-correlation-id",
+  "tenantId": "tenant-001",
+  "taxpayerId": "taxpayer-123",
+  "documentName": "w2-2024.pdf",
+  "documentBase64": "<base64-document-bytes>",
+  "taxYear": 2024
+}
+```
+
+Required fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `tenantId` | Yes | Tenant or organization identifier. |
+| `taxpayerId` | Yes | Taxpayer identifier used for storage partitioning. |
+| `documentName` | Yes | Original document name. |
+| `documentBase64` | Yes | Base64-encoded W-2 document bytes. |
+| `taxYear` | No | Tax year. Defaults to the current year when omitted. |
+| `correlationId` | No | End-to-end trace identifier. |
+
+Success response:
+
+```http
+202 Accepted
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "accepted",
+  "blobUri": "https://<storage-account>.blob.core.windows.net/raw-w2/tenant-001/taxpayer-123/2024/...",
+  "messageId": "service-bus-message-id",
+  "correlationId": "optional-correlation-id"
+}
+```
+
+Validation errors return `400`. Runtime configuration or downstream ingestion
+errors return `500`.
+
+## Foundry Tools API
+
+The Foundry tools Function App exposes HTTP endpoints backed by
+`foundry_agents.tools.w2_pipeline_tools.TOOL_REGISTRY`.
+
+The OpenAPI contract lives at:
+
+```text
+src/services/foundry-tools/openapi.json
+```
+
+The logical tool manifest lives at:
+
+```text
+src/foundry_agents/tools/w2_pipeline_tools.json
+```
+
+### Tool Response Envelope
+
+Successful tool responses use this envelope:
+
+```json
+{
+  "toolName": "generate_form_1040_document",
+  "result": {
+    "correlationId": "corr-001",
+    "generationStatus": "success"
   }
 }
 ```
 
-**Fields:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `tenantId` | string | Yes | Organization tenant identifier |
-| `taxpayerId` | string | Yes | Individual taxpayer identifier (e.g., SSN, EIN) |
-| `documentName` | string | Yes | Original document filename (e.g., "w2-2024.pdf") |
-| `documentBase64` | string | Yes | Base64-encoded document bytes |
-| `metadata` | object | No | Additional metadata (optional) |
-| `metadata.taxYear` | integer | No | Tax year for the W-2 |
-| `metadata.uploadedBy` | string | No | User or system uploading document |
-| `metadata.source` | string | No | Document source (e.g., "employer-portal") |
-
-### Response
-
-#### Success Response (202 Accepted)
+Tool execution failures return:
 
 ```json
 {
-  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
-  "blobUri": "https://storage.blob.core.windows.net/raw-w2/tenant-id/taxpayer-id/2024/20240104-120530-550e8400.pdf",
-  "messageId": "550e8400-e29b-41d4-a716-446655440001",
-  "status": "accepted",
-  "pipeline": {
-    "stage": "intake",
-    "nextStage": "extraction",
-    "estimatedProcessingTime": "2-5 minutes"
-  },
-  "timestamp": "2024-01-04T12:05:30Z"
+  "error": "tool_execution_failed",
+  "toolName": "generate_form_1040_document",
+  "message": "error details"
 }
 ```
 
-**Response Fields:**
+### Implemented Tool Endpoints
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `correlationId` | UUID | Unique identifier for tracking this document through the pipeline |
-| `blobUri` | string | Storage location of the uploaded document |
-| `messageId` | UUID | Service Bus message identifier |
-| `status` | string | Current status: `accepted`, `processing`, `completed`, `failed` |
-| `pipeline` | object | Pipeline execution details |
-| `pipeline.stage` | string | Current pipeline stage |
-| `pipeline.nextStage` | string | Next stage in the workflow |
-| `pipeline.estimatedProcessingTime` | string | Estimated time to completion |
-| `timestamp` | ISO 8601 | Timestamp of the response |
+| Endpoint | Tool name | Purpose |
+| --- | --- | --- |
+| `POST /api/run-w2-pipeline` | `run_w2_pipeline` | Run the complete governed pipeline. |
+| `POST /api/start-w2-pipeline` | `start_w2_pipeline` | Create initial orchestration state. |
+| `POST /api/process-w2-intake` | `process_w2_intake` | Process an already-uploaded W-2 document event. |
+| `POST /api/extract-w2-document` | `extract_w2_document` | Extract normalized W-2 facts. |
+| `POST /api/validate-w2-facts` | `validate_w2_facts` | Validate extracted W-2 facts. |
+| `POST /api/submit-w2-human-review` | `submit_w2_human_review` | Route flagged records to human review. |
+| `POST /api/map-w2-tax-facts` | `map_w2_tax_facts` | Map W-2 facts into 1040-ready fields and planning facts. |
+| `POST /api/generate-form-1040-document` | `generate_form_1040_document` | Generate a draft Form 1040 artifact. |
+| `POST /api/evaluate-w2-compliance` | `evaluate_w2_compliance` | Evaluate compliance and audit controls. |
+| `POST /api/persist-w2-pipeline-checkpoint` | `persist_w2_pipeline_checkpoint` | Persist a governed checkpoint. |
+| `POST /api/persist-completed-w2-pipeline` | `persist_completed_w2_pipeline` | Persist completed pipeline state. |
+| `POST /api/get-runtime-configuration` | `get_runtime_configuration` | Return non-secret runtime configuration. |
 
-#### Error Responses
+### Complete Pipeline Tool
 
-**400 Bad Request**
+```http
+POST https://{foundry-tools-host}/api/run-w2-pipeline
+Content-Type: application/json
+```
+
 ```json
 {
-  "error": "INVALID_REQUEST",
-  "message": "Missing required field: documentBase64",
-  "timestamp": "2024-01-04T12:05:30Z",
-  "traceId": "550e8400-e29b-41d4-a716-446655440000"
+  "correlationId": "corr-001",
+  "tenantId": "tenant-001",
+  "taxpayerId": "taxpayer-123",
+  "documentName": "w2-2024.pdf",
+  "blobUri": "https://<storage-account>.blob.core.windows.net/raw-w2/...",
+  "taxYear": 2024
 }
 ```
 
-**401 Unauthorized**
+The result contains the pipeline state, including extraction, validation, tax
+mapping, form generation, compliance, and persistence metadata.
+
+### Form 1040 Generation Tool
+
+The form generation tool is normally called after `map_w2_tax_facts`.
+
+```http
+POST https://{foundry-tools-host}/api/generate-form-1040-document
+Content-Type: application/json
+```
+
 ```json
 {
-  "error": "UNAUTHORIZED",
-  "message": "Invalid or missing authentication token",
-  "timestamp": "2024-01-04T12:05:30Z"
-}
-```
-
-**413 Payload Too Large**
-```json
-{
-  "error": "DOCUMENT_TOO_LARGE",
-  "message": "Document size exceeds maximum allowed size of 50MB",
-  "timestamp": "2024-01-04T12:05:30Z"
-}
-```
-
-**500 Internal Server Error**
-```json
-{
-  "error": "INTERNAL_ERROR",
-  "message": "An unexpected error occurred during document upload",
-  "details": "Contact support with traceId",
-  "traceId": "550e8400-e29b-41d4-a716-446655440000",
-  "timestamp": "2024-01-04T12:05:30Z"
-}
-```
-
-### Example Requests
-
-#### cURL
-
-```bash
-# Prepare document
-DOCUMENT=$(cat w2-2024.pdf | base64)
-
-# Upload
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR-TOKEN" \
-  -d '{
-    "tenantId": "tenant-123",
-    "taxpayerId": "employee-456",
-    "documentName": "w2-2024.pdf",
-    "documentBase64": "'$DOCUMENT'",
-    "metadata": {
-      "taxYear": 2024,
-      "source": "employer-portal"
-    }
-  }' \
-  https://taxai-func.azurewebsites.net/api/upload-w2
-```
-
-#### Python
-
-```python
-import requests
-import base64
-
-# Read and encode document
-with open('w2-2024.pdf', 'rb') as f:
-    document_base64 = base64.b64encode(f.read()).decode('utf-8')
-
-# Prepare payload
-payload = {
-    "tenantId": "tenant-123",
-    "taxpayerId": "employee-456",
-    "documentName": "w2-2024.pdf",
-    "documentBase64": document_base64,
-    "metadata": {
+  "correlationId": "corr-001",
+  "tenantId": "tenant-001",
+  "taxpayerId": "taxpayer-123",
+  "taxYear": 2024,
+  "mappingResult": {
+    "mappingStatus": "success",
+    "form1040": {
+      "federal": {
         "taxYear": 2024,
-        "source": "employer-portal"
+        "filingStatus": "single",
+        "wagesLine1a": 75000.0,
+        "federalIncomeTaxWithheld": 8500.0
+      }
     }
+  }
 }
-
-# Make request
-response = requests.post(
-    "https://taxai-func.azurewebsites.net/api/upload-w2",
-    json=payload,
-    headers={"Authorization": "Bearer YOUR-TOKEN"}
-)
-
-# Check response
-if response.status_code == 202:
-    result = response.json()
-    print(f"Document accepted. Correlation ID: {result['correlationId']}")
-else:
-    print(f"Error: {response.text}")
 ```
 
-#### PowerShell
-
-```powershell
-# Read and encode document
-$document = [Convert]::ToBase64String(
-  [System.IO.File]::ReadAllBytes("w2-2024.pdf")
-)
-
-# Prepare body
-$body = @{
-    tenantId = "tenant-123"
-    taxpayerId = "employee-456"
-    documentName = "w2-2024.pdf"
-    documentBase64 = $document
-    metadata = @{
-        taxYear = 2024
-        source = "employer-portal"
-    }
-} | ConvertTo-Json
-
-# Make request
-$response = Invoke-WebRequest `
-  -Uri "https://taxai-func.azurewebsites.net/api/upload-w2" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Headers @{"Authorization" = "Bearer YOUR-TOKEN"} `
-  -Body $body
-
-$response.Content | ConvertFrom-Json
-```
-
-## Agent Orchestration APIs
-
-The agent orchestration framework provides internal APIs for agent communication and pipeline coordination.
-
-### Supervisor Orchestrator API
-
-#### `orchestrate(intake_event: Dict) -> Dict`
-
-Orchestrates a document through the complete processing pipeline.
-
-**Parameters:**
-
-- `intake_event` (Dict): Intake trigger event with document metadata
-
-**Returns:** Pipeline execution result with all agent outputs
-
-**Example:**
-
-```python
-from foundry_agents.supervisor.orchestrator import SupervisorOrchestrator
-
-orchestrator = SupervisorOrchestrator()
-event = {
-    "correlationId": "550e8400-e29b-41d4-a716-446655440000",
-    "blobUri": "https://storage.blob.core.windows.net/...",
-    "tenantId": "tenant-123",
-    "taxpayerId": "employee-456"
-}
-
-result = orchestrator.orchestrate(event)
-print(result)
-```
-
-### Agent API
-
-All agents implement a common interface:
-
-#### `agent.process(context: AgentContext) -> AgentResult`
-
-**Parameters:**
-
-- `context` (AgentContext): Processing context with document and metadata
-
-**Returns:** Agent result with output and next stage
-
-**Example:**
-
-```python
-from foundry_agents.extraction.agent import ExtractionAgent
-
-agent = ExtractionAgent()
-result = agent.process(context)
-
-print(f"Status: {result['status']}")
-print(f"Extracted fields: {result['output']}")
-print(f"Next stage: {result['nextStage']}")
-```
-
-## Error Handling
-
-### Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `INVALID_REQUEST` | 400 | Invalid request format or missing fields |
-| `DOCUMENT_TOO_LARGE` | 413 | Document exceeds size limit |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | Document format not supported |
-| `UNAUTHORIZED` | 401 | Authentication failed |
-| `FORBIDDEN` | 403 | Access denied |
-| `NOT_FOUND` | 404 | Resource not found |
-| `INTERNAL_ERROR` | 500 | Server error |
-| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
-
-### Error Response Structure
+Example result:
 
 ```json
 {
-  "error": "ERROR_CODE",
-  "message": "Human-readable error message",
-  "details": "Additional technical details (optional)",
-  "traceId": "UUID for tracking",
-  "timestamp": "ISO 8601 timestamp"
+  "toolName": "generate_form_1040_document",
+  "result": {
+    "correlationId": "corr-001",
+    "generationStatus": "success",
+    "generationMode": "html-template",
+    "artifactMode": "azure-blob",
+    "documentType": "irs-form-1040",
+    "templateVersion": "irs-1040-2024-html-v1",
+    "artifact": {
+      "artifactId": "form-1040-corr-001",
+      "storageMode": "azure-blob",
+      "contentType": "text/html",
+      "containerName": "tax-artifacts",
+      "blobName": "tenant-001/2024/form-1040-corr-001.html"
+    }
+  }
 }
 ```
-
-### Retry Strategy
-
-- **Retryable errors** (5xx): Use exponential backoff (1s, 2s, 4s, 8s, max 60s)
-- **Non-retryable errors** (4xx): Fix the request and retry
-- **Rate limiting** (429): Respect `Retry-After` header
 
 ## Authentication
 
-### For Local Testing
+The current Function Apps use Azure Functions authentication. In production,
+the recommended pattern is to place these endpoints behind API Management or a
+Foundry-supported authenticated tool binding.
 
-No authentication required for local test harness:
+Runtime access to Azure services uses:
 
-```python
+- Key Vault references for connection-string app settings.
+- Managed identity for Cosmos DB.
+- Managed identity for Blob artifact storage when
+  `FORM_1040_STORAGE_ACCOUNT_URL` is configured.
+
+## Local Testing
+
+No HTTP host is required to validate the core pipeline locally:
+
+```powershell
+python -m unittest discover -s tests
 python src/foundry_agents/manual_test_harness.py
 ```
 
-### For Azure Deployment
-
-#### API Management
-
-API Management endpoint requires authentication:
-
-```bash
-# Obtain token
-TOKEN=$(az account get-access-token --resource-type ms-graph -o tsv --query accessToken)
-
-# Use in request
-curl -H "Authorization: Bearer $TOKEN" ...
-```
-
-#### Managed Identity
-
-When deployed to Azure Function with managed identity:
-
-```python
-from azure.identity import DefaultAzureCredential
-
-credential = DefaultAzureCredential()
-token = credential.get_token("https://management.azure.com/.default")
-```
-
-## Rate Limiting
-
-### Limits
-
-- **Per tenant**: 1000 requests/hour
-- **Per function instance**: 100 concurrent requests
-- **Document size**: 50 MB maximum
-
-### Rate Limit Headers
-
-```
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1704379200
-```
-
-When rate limit exceeded:
-
-```
-HTTP 429 Too Many Requests
-Retry-After: 60
-```
-
-## Examples
-
-### Complete Workflow
-
-```bash
-# 1. Upload W-2 document
-RESPONSE=$(curl -X POST https://taxai-func.azurewebsites.net/api/upload-w2 \
-  -H "Content-Type: application/json" \
-  -d @payload.json)
-
-CORRELATION_ID=$(echo $RESPONSE | jq -r '.correlationId')
-
-# 2. Poll for status (coming soon)
-while true; do
-  STATUS=$(curl https://taxai-func.azurewebsites.net/api/status/$CORRELATION_ID)
-  echo "Status: $(echo $STATUS | jq -r '.status')"
-  
-  if [[ $(echo $STATUS | jq -r '.status') == "completed" ]]; then
-    break
-  fi
-  
-  sleep 5
-done
-
-# 3. Retrieve results
-curl https://taxai-func.azurewebsites.net/api/results/$CORRELATION_ID
-```
-
-## Support
-
-- **API Issues**: Open a GitHub issue with request/response details
-- **Documentation**: See comprehensive guides in [docs/](../docs/)
-- **Examples**: Check [src/services/](../src/services/) for service implementations
-
----
-
-**Last Updated**: January 2024
-**Version**: 1.0.0
-
+The tests verify that OpenAPI operation IDs match the Python tool registry.

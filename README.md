@@ -1,306 +1,187 @@
 # Microsoft Foundry Tax Intelligence Platform
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-green)](https://www.python.org/downloads/)
-[![Azure Services](https://img.shields.io/badge/Azure-Multi--Service-0078D4)](https://azure.microsoft.com)
+[![Azure](https://img.shields.io/badge/Azure-Functions%20%7C%20Cosmos%20DB%20%7C%20Storage-0078D4)](https://azure.microsoft.com/)
 [![Microsoft Foundry](https://img.shields.io/badge/Microsoft-Foundry-512BD4)](https://aka.ms/foundry)
+[![Infrastructure](https://img.shields.io/badge/IaC-Bicep-blue)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
 
-An enterprise-grade, agentic processing platform built on **Microsoft Foundry** for intelligent tax document processing. This reference architecture demonstrates how to build AI agent-driven workflows with secure intake, intelligent extraction, validation, and compliance orchestration.
+Enterprise reference implementation for a Microsoft Foundry-backed tax document
+processing platform. The solution demonstrates governed W-2 intake, extraction,
+validation, human review, tax mapping, draft Form 1040 generation, compliance,
+and durable persistence.
 
-## 🎯 Overview
+This repository is designed as a professional starting point for teams
+evaluating agentic orchestration on Azure. It keeps local development,
+production-equivalent adapters, infrastructure, CI/CD, and Foundry binding
+artifacts in one versioned solution.
 
-This platform showcases an enterprise production-ready implementation of:
+## What This Builds
 
-- **Event-driven service architecture** — Modular, independently deployable services
-- **AI agent orchestration** — Supervisor-worker pattern with 7 specialized agents
-- **Secure document processing** — W-2 intake with encryption, audit trails, and compliance
-- **Local-first testing** — Test the entire pipeline locally before cloud deployment (zero Azure costs)
-- **Infrastructure as Code** — Bicep templates for reproducible, enterprise deployments
-- **Observability & governance** — Application Insights, Key Vault, managed identities
+- W-2 intake Azure Function for secure document ingestion.
+- Foundry tools Azure Function exposing governed HTTP tools.
+- Supervisor-with-tools orchestration pattern for regulated processing.
+- Local agent pipeline that mirrors production configuration.
+- Azure AI Document Intelligence adapter for W-2 extraction.
+- Cosmos DB checkpoint persistence for resume and audit.
+- Draft Form 1040 artifact generation from mapped W-2 facts.
+- GitHub Actions deployment pipeline for multiple Azure hosts.
+- Foundry agent, prompt, tool, and evaluation artifacts.
 
-## 📋 Features
+## Current Agent Flow
 
-✅ **Production-Ready Services**
-- Secure W-2 document intake with base64 handling and hierarchical blob storage
-- Event-driven pipeline with Azure Service Bus integration
-- Python Azure Functions with async processing
-
-✅ **Agent-Based AI Orchestration**
-- Supervisor orchestrator coordinating multi-stage workflows
-- 7 specialized agents: Intake → Extraction → Validation → Tax Mapping → Compliance → Human Review
-- Local deterministic adapters plus Azure Document Intelligence extraction mode
-- Governed tax fact persistence for downstream planning and analytics
-
-✅ **Enterprise Infrastructure**
-- Complete Bicep IaC templates with best practices
-- Network isolation, encryption at rest/in-transit, managed identities
-- Cost-optimized tier selection (Consumption, Standard, GRS)
-
-✅ **Zero-Cost Local Testing**
-- Test the entire agent pipeline locally before deploying to Azure
-- Manual test harness with two scenarios (full pipeline, with human review)
-- Immediate feedback loop for development
-
-✅ **Professional Documentation**
-- Logical architecture diagrams (Mermaid)
-- Service design specifications
-- Deployment guides and API documentation
-
-## 🚀 Quick Start
-
-### Test Locally (No Azure Required)
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/agentic-processing-platform.git
-cd agentic-processing-platform
-
-# Test the agent orchestration pipeline
-cd src/foundry_agents
-python manual_test_harness.py
+```mermaid
+flowchart LR
+  Intake[Intake] --> Extraction[Extraction]
+  Extraction --> Validation[Validation]
+  Validation -->|review needed| HumanReview[Human Review]
+  Validation -->|passed| TaxMapping[Tax Mapping]
+  HumanReview -->|approved| TaxMapping
+  HumanReview -->|waiting| Pause[Await Human Decision]
+  TaxMapping --> FormGeneration[Form 1040 Generation]
+  FormGeneration --> Compliance[Compliance]
+  Compliance --> Persistence[Final Persistence]
 ```
 
-**Expected output**: Complete W-2 processing workflow with agent execution logs, timestamps, and final summary.
+Tax mapping creates a structured `form1040` payload. Form generation turns that
+payload into a draft document artifact and stores the artifact metadata in the
+governed tax fact record.
 
-See [Getting Started](GETTING_STARTED.md) for detailed setup instructions.
+See [Agent Flow](docs/agent-flow.md) for the detailed tool, persistence, and
+deployment flow.
 
-### Deploy to Azure
+## Architecture At A Glance
 
-```bash
-# Deploy intake service infrastructure and application
-cd scripts/services/w2-intake
-./deploy-all.ps1
+```mermaid
+flowchart TB
+  Client[Client or API Management] --> IntakeFn[W2 Intake Function App]
+  IntakeFn --> RawStorage[Raw W2 Blob Storage]
+  IntakeFn --> Eventing[Service Bus / Event Trigger]
+  Eventing --> Foundry[Foundry Supervisor Agent]
+  Foundry --> ToolHost[Foundry Tools Function App]
+  ToolHost --> Agents[Governed Python Agent Workers]
+  Agents --> DocIntel[Azure AI Document Intelligence]
+  Agents --> Cosmos[Cosmos DB Tax Fact Checkpoints]
+  Agents --> Artifacts[Blob Storage Draft 1040 Artifacts]
+  Agents --> Monitor[Application Insights]
+  ToolHost --> KeyVault[Key Vault References]
 ```
 
-See [Deployment Guide](DEPLOYMENT_GUIDE.md) for step-by-step cloud deployment.
+The Foundry supervisor reasons about coordination and user-facing status. The
+regulated business actions remain deterministic Python tools with tests,
+configuration validation, and durable checkpoints.
 
-## 📂 Repository Structure
+## Repository Layout
 
-```
-├── docs/                              # Architecture and reference documentation
-│   ├── README.md                      # Documentation index
-│   ├── architecture.md                # Logical architecture with diagrams
-│   ├── solution-overview.md           # Service pipeline overview
-│   └── w2-intake-service-design.md   # W-2 intake service specification
-│
-├── src/                               # Application source code
-│   ├── services/                      # Enterprise service implementations
-│   │   ├── w2-intake/                # Secure intake service (production)
-│   │   ├── document-extraction/      # Extraction service (scaffolded)
-│   │   ├── data-validation/          # Validation service (scaffolded)
-│   │   ├── tax-mapping/              # Tax mapping service (scaffolded)
-│   │   └── audit-monitoring/         # Compliance service (scaffolded)
-│   │
-│   └── foundry_agents/                # Agent orchestration (local testable)
-│       ├── supervisor/                # Orchestrator agent
-│       ├── intake/                    # Intake agent
-│       ├── extraction/                # Extraction agent
-│       ├── validation/                # Validation agent
-│       ├── tax-mapping/               # Tax mapping agent
-│       ├── compliance/                # Compliance agent
-│       ├── human-review/              # Human review agent
-│       ├── manual_test_harness.py    # Local test entry point
-│       └── README.md                  # Agent documentation
-│
-├── infrastructure/                    # IaC: Azure Bicep templates
-│   └── services/                      # Service infrastructure modules
-│       ├── w2-intake/                # Intake service Azure resources
-│       ├── document-extraction/      # Extraction service resources
-│       ├── data-validation/          # Validation service resources
-│       ├── tax-mapping/              # Tax mapping service resources
-│       └── audit-monitoring/         # Compliance service resources
-│
-├── scripts/                           # Deployment and operational scripts
-│   ├── deploy-all-services.ps1       # Deploy entire platform
-│   └── services/                      # Service-specific deployment
-│       ├── w2-intake/
-│       ├── document-extraction/
-│       ├── data-validation/
-│       ├── tax-mapping/
-│       └── audit-monitoring/
-│
-├── enterprise-foundry-tax-ai-blueprint.md  # Full implementation blueprint
-├── implementation-phases.md                 # Phased delivery roadmap
-├── LICENSE                                  # Apache 2.0
-├── CONTRIBUTING.md                         # Contribution guidelines
-├── GETTING_STARTED.md                      # Setup and quick start
-├── DEPLOYMENT_GUIDE.md                     # Cloud deployment instructions
-└── README.md                                # This file
+```text
+.
+|-- .github/workflows/                 # GitHub Actions CI/CD
+|-- docs/                              # Architecture, setup, deployment, flow docs
+|-- infrastructure/services/           # Bicep templates by Azure host
+|   |-- w2-intake/
+|   `-- foundry-tools/
+|-- scripts/github/                    # GitHub Actions bootstrap automation
+|-- src/foundry_agents/                # Agent workers, prompts, tools, evals
+|-- src/services/w2-intake/            # W-2 intake Function App
+|-- src/services/foundry-tools/        # Foundry tools Function App
+`-- tests/                             # Unit and architecture binding tests
 ```
 
-## 🏗️ Architecture
+## Run Locally
 
-The platform follows a **service-based architecture** with **event-driven agent orchestration**:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Client Application / API Management                    │
-└─────────────────┬───────────────────────────────────────┘
-                  │ Secure API
-┌─────────────────▼───────────────────────────────────────┐
-│  W-2 Intake Service (Azure Function)                    │
-│  - Document validation & encryption                     │
-│  - Hierarchical blob storage                            │
-│  - Event publishing (Service Bus)                       │
-└─────────────────┬───────────────────────────────────────┘
-                  │ Service Bus Event
-┌─────────────────▼───────────────────────────────────────┐
-│  Foundry Agent Orchestrator                             │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ Supervisor: Routes through pipeline stages      │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
-│  ┌────────────────────────────────────────────────┐   │
-│  │ Agents (7 specialized workers)                  │   │
-│  │ • Extraction (AI Document Intelligence)         │   │
-│  │ • Validation (Business rules engine)            │   │
-│  │ • Tax Mapping (1040 payload generation)         │   │
-│  │ • Compliance (Governance checks)                │   │
-│  │ • Human Review (Flagged record routing)         │   │
-│  └────────────────────────────────────────────────┘   │
-└─────────────────┬───────────────────────────────────────┘
-                  │ Persistent data
-        ┌─────────┴─────────┬─────────────────────┐
-        │                   │                     │
-    Storage           SQL Database         Cosmos DB
-   (Blobs)          (Structured)        (Semantic Memory)
-```
-
-See [Architecture Documentation](docs/architecture.md) for detailed diagrams and component responsibilities.
-
-## 📖 Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [Getting Started](GETTING_STARTED.md) | Setup, dependencies, local testing |
-| [Deployment Guide](DEPLOYMENT_GUIDE.md) | Azure deployment, prerequisites, troubleshooting |
-| [API Documentation](docs/API.md) | Service endpoints, request/response formats |
-| [Architecture](docs/architecture.md) | Logical design, component interactions |
-| [Solution Overview](docs/solution-overview.md) | Service pipeline, integration points |
-| [Blueprint](enterprise-foundry-tax-ai-blueprint.md) | Full implementation strategy |
-| [Implementation Phases](implementation-phases.md) | Phased delivery roadmap |
-
-## 🛠️ Technology Stack
-
-**Azure Services**
-- Azure Functions (Python 3.11, Consumption tier)
-- Azure Storage (GRS, blob containers)
-- Azure Service Bus (Standard, event-driven)
-- Azure SQL Database
-- Cosmos DB (semantic memory)
-- Azure Key Vault (secrets management)
-- Application Insights + Log Analytics (observability)
-- API Management (API gateway, Consumption tier)
-
-**AI & Cognitive Services**
-- Microsoft Foundry (agent orchestration)
-- Azure AI Document Intelligence (document parsing)
-- Azure OpenAI (reasoning models)
-- Azure AI Search (knowledge retrieval)
-
-**Infrastructure & Deployment**
-- Bicep (Infrastructure as Code)
-- PowerShell (deployment automation)
-- Managed Identities (RBAC, zero-secret operations)
-
-## 🔒 Security & Compliance
-
-✅ **Encryption**: TLS 1.2 in-transit, encryption at rest  
-✅ **Access Control**: Managed identities, RBAC, service principals  
-✅ **Secrets Management**: Azure Key Vault with soft delete & purge protection  
-✅ **Audit Trails**: Application Insights, diagnostic logging  
-✅ **Network Isolation**: Service Bus with shared access policies  
-✅ **Data Governance**: Microsoft Purview integration ready  
-✅ **PII Guardrails**: normalized tax facts are persisted without raw extraction output, SSNs are masked by default, and production cannot use local JSON persistence
-
-### Tax Data Persistence Guardrails
-
-The agent pipeline persists planning-ready tax facts through a dedicated governance boundary. The same governed record is checkpointed after intake, extraction, validation, human review when applicable, tax mapping, compliance, and completion. Persisted records include document metadata, normalized W-2 facts, confidence scores, validation/review status, tax planning facts, lifecycle status, and audit metadata.
-
-By default, the platform does not persist raw Document Intelligence responses and masks SSN-like values before storage. Local development can use `TAX_FACT_PERSISTENCE_MODE=local-json`, which writes to `.local_state/`; production should use `TAX_FACT_PERSISTENCE_MODE=cosmos`, which upserts governed checkpoints to Azure Cosmos DB using managed identity by default. The extraction checkpoint allows downstream processing to resume without re-running Document Intelligence after a later-stage failure.
-
-## 🚦 Getting Started
-
-### Prerequisites
-
-- **Python 3.11+**
-- **Azure CLI** (for cloud deployment)
-- **PowerShell 7+** (for deployment scripts)
-- **Git**
-- **Azure Subscription** (for cloud deployment; local testing requires none)
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/agentic-processing-platform.git
-cd agentic-processing-platform
-
-# Set up Python environment
-python -m venv venv
-source venv/Scripts/activate  # or `venv\Scripts\activate` on Windows
-
-# Install dependencies
-pip install -r src/foundry_agents/requirements.txt
-pip install -r src/services/w2-intake/requirements.txt
-
-# Test locally (no Azure costs)
-cd src/foundry_agents
-python manual_test_harness.py
-```
-
-See [Getting Started](GETTING_STARTED.md) for detailed instructions.
-
-## 📊 Testing
-
-**Local Testing** (No Azure Deployment)
-```bash
-cd src/foundry_agents
-python manual_test_harness.py
-```
-- Tests the full agent orchestration pipeline
-- Two scenarios: full pipeline, pipeline with human review
-- Mocked data, immediate feedback
-
-**Unit Tests**
-```bash
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r src/foundry_agents/requirements.txt
+python -m pip install -r src/services/w2-intake/requirements.txt
+python -m pip install -r src/services/foundry-tools/requirements.txt
 python -m unittest discover -s tests
 ```
 
-**Integration Tests** (Requires Azure, coming soon)
-```bash
-pytest tests/integration/
+Optional local pipeline run:
+
+```powershell
+python src/foundry_agents/manual_test_harness.py
 ```
 
-## 📝 Contributing
+Local defaults come from `.env.example`. A real `.env` file is ignored by Git
+and is loaded only for local development.
 
-We welcome contributions! Please see [Contributing Guidelines](CONTRIBUTING.md) for:
-- Code style and best practices
-- Pull request process
-- Commit message conventions
-- Testing requirements
+## Deploy Your Own Environment
 
-## 📄 License
+The recommended deployment path is GitHub Actions with Azure OIDC federation.
+No long-lived Azure secret is required.
 
-This project is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for details.
+1. Fork or clone this repository.
+2. Authenticate locally with Azure CLI and GitHub CLI.
+3. Run the bootstrap script:
 
-## 🤝 Support
+```powershell
+.\scripts\github\bootstrap-github-actions.ps1 `
+  -SubscriptionId "<subscription-id>" `
+  -TenantId "<tenant-id>" `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -Environment dev `
+  -Location eastus `
+  -NamePrefix taxai `
+  -GrantUserAccessAdministrator
+```
 
-- **Documentation**: See [docs/](docs/) for architecture, design, and deployment guides
-- **Issues**: Report bugs or feature requests via GitHub Issues
-- **Discussions**: For architecture questions, use GitHub Discussions
+4. Push to `main` or run **Deploy Agentic Processing Platform** from GitHub
+   Actions.
+5. Review the workflow output for the W-2 intake Function App and Foundry tools
+   Function App names.
 
-## 🎓 Reference & Learning
+Detailed setup is in [Deploy Your Own Environment](docs/deploy-your-own.md) and
+[GitHub Actions Deployment](docs/github-actions-deployment.md).
 
-This is a **reference architecture** demonstrating enterprise patterns for:
-- AI agent orchestration with Microsoft Foundry
-- Event-driven service architecture on Azure
-- Infrastructure as Code with Bicep
-- Production-grade document processing pipelines
+## Foundry Integration
 
-Perfect for architects, engineers, and teams evaluating multi-agent AI platforms.
+The repository includes Foundry-ready artifacts:
 
----
+- [agent.yaml](src/foundry_agents/agent.yaml)
+- [eval.yaml](src/foundry_agents/eval.yaml)
+- [prompts](src/foundry_agents/prompts)
+- [tool manifest](src/foundry_agents/tools/w2_pipeline_tools.json)
+- [HTTP OpenAPI binding](src/services/foundry-tools/openapi.json)
 
-**Built for Enterprise. Designed for Impact.**
+Foundry agent registration is intentionally a guarded workflow hook until the
+target Foundry project endpoint, model deployment, tool authentication model,
+and registration command are finalized for the environment. See
+[Foundry Registration Automation](docs/foundry-registration-automation.md).
 
+## Security And Governance
+
+- Key Vault references for Function App connection strings.
+- Managed identities for runtime access.
+- Cosmos DB SQL RBAC for governed tax fact persistence.
+- Blob artifact storage for generated draft 1040 documents.
+- SSN masking by default before persistence.
+- Raw Document Intelligence responses are not persisted.
+- Production config rejects local extraction, local review auto-approval, and
+  local JSON persistence.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [Getting Started](GETTING_STARTED.md) | Local setup and validation |
+| [Deploy Your Own Environment](docs/deploy-your-own.md) | End-to-end setup for another user or team |
+| [GitHub Actions Deployment](docs/github-actions-deployment.md) | CI/CD workflow details |
+| [Agent Flow](docs/agent-flow.md) | Agent sequence, tools, and persistence flow |
+| [Architecture](docs/architecture.md) | Logical architecture and security boundaries |
+| [Foundry Tool Execution Flow](docs/foundry-tool-execution-flow.md) | HTTP tool host and registry flow |
+| [Agent-To-Agent vs Tools](docs/agent-to-agent-vs-tools.md) | Design pattern comparison |
+
+## Validation
+
+```powershell
+python -m unittest discover -s tests
+python -m compileall src tests
+az bicep build --file infrastructure/services/w2-intake/bicep/main.bicep
+az bicep build --file infrastructure/services/foundry-tools/bicep/main.bicep
+```
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

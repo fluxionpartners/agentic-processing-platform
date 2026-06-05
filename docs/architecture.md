@@ -21,13 +21,14 @@ flowchart TD
     direction TB
     APIM[API Management]
     IntakeSvc[Intake Service / Azure Functions]
-    Storage[Azure Storage (raw W-2 / artifacts)]
+    Storage[Azure Storage (raw W-2 / generated 1040 artifacts)]
   end
 
   subgraph Orchestration[Foundry Orchestration]
     direction TB
     Foundry[Foundry Agent Service]
     Orchestrator[Orchestrator Agent]
+    ToolHost[Foundry Tools Function App]
     Agents[Agent Set]
     Memory[Foundry Memory]
   end
@@ -67,14 +68,17 @@ flowchart TD
   IntakeSvc -->|Publish ingestion event| EventGrid
   EventGrid -->|Trigger workflow| Orchestrator
   Orchestrator -->|Invoke| Agents
+  Orchestrator -->|HTTP tool calls| ToolHost
+  ToolHost -->|Execute governed Python tools| Agents
   Agents --> Foundry
   Agents -->|Use AI tool| DocInt
   Agents -->|Use AI reasoning| OpenAI
   Agents -->|Knowledge retrieval| AISearch
   Agents -->|Persist structured data| SQL
-  Agents -->|Persist memory / semantic artifacts| Cosmos
+  Agents -->|Persist governed tax facts / checkpoints| Cosmos
+  Agents -->|Store generated 1040 artifacts| Storage
   Agents -->|Store knowledge artifacts| DataLake
-  Agents -->|Secrets access| KeyVault
+  Agents -->|Secrets access by managed identity| KeyVault
   Orchestrator -->|Workflow state| Memory
   IntakeSvc -->|Integration events| ServiceBus
   Durable -->|Orchestrate long-running workflows| ServiceBus
@@ -97,7 +101,7 @@ flowchart TD
 - Apply request validation, throttling, and DLP policies.
 
 ### Azure Storage
-- Store raw W-2 documents, extracted JSON artifacts, and evidence packages.
+- Store raw W-2 documents, generated 1040 draft artifacts, and evidence packages.
 - Manage private endpoint access and encryption.
 - Serve as the raw asset layer for downstream extraction.
 
@@ -110,6 +114,12 @@ flowchart TD
 - Host the multi-agent orchestration layer.
 - Manage agent definitions, memory, tools, and iterations.
 - Execute the supervisor pattern and coordinate specialized agents.
+
+### Foundry Tools Function App
+- Expose governed Python tools as HTTP endpoints for Foundry tool binding.
+- Map endpoint routes to logical tool names and deterministic backend functions.
+- Use managed identity, Key Vault references, and Cosmos DB RBAC for runtime access.
+- Generate draft Form 1040 artifacts from mapped tax facts and store artifact metadata for audit and resume.
 
 ### Foundry Memory
 - Store short-term workflow state and session context.
@@ -183,9 +193,11 @@ The architecture enforces the following boundaries:
 3. Intake Service publishes an ingestion event to Event Grid.
 4. The Foundry Orchestrator receives the event and triggers the agent workflow.
 5. Agents call Azure AI Document Intelligence and Azure OpenAI for extraction and reasoning.
-6. Validated tax assets are stored in Azure SQL and Cosmos DB.
-7. Knowledge retrieval is performed from Azure AI Search.
-8. Telemetry and audit events are recorded in Azure Monitor.
+6. Tax mapping creates 1040-ready fields and planning facts.
+7. Form generation renders a draft 1040 artifact and stores it in the configured artifact store.
+8. Governed checkpoints, mapping results, artifact metadata, and compliance evidence are stored in Cosmos DB.
+9. Knowledge retrieval is performed from Azure AI Search.
+10. Telemetry and audit events are recorded in Azure Monitor.
 
 ## Diagram Notes
 

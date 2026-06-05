@@ -130,6 +130,24 @@ resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/authorizationRules@
   dependsOn: [serviceBus]
 }
 
+resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-07-01' = {
+  parent: keyVault
+  name: 'w2-storage-connection-string'
+  properties: {
+    value: storageConnectionString
+  }
+  dependsOn: [storageAccount]
+}
+
+resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-07-01' = {
+  parent: keyVault
+  name: 'w2-servicebus-connection-string'
+  properties: {
+    value: serviceBusConnectionString
+  }
+  dependsOn: [serviceBusAuthRule]
+}
+
 resource apiManagement 'Microsoft.ApiManagement/service@2024-06-01-preview' = {
   name: apiMgmtName
   location: location
@@ -174,11 +192,11 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
         }
         {
           name: 'AzureWebJobsStorage'
-          value: storageConnectionString
+          value: storageConnectionStringKeyVaultReference
         }
         {
           name: 'W2_STORAGE_CONNECTION_STRING'
-          value: storageConnectionString
+          value: storageConnectionStringKeyVaultReference
         }
         {
           name: 'W2_CONTAINER_NAME'
@@ -186,7 +204,7 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
         }
         {
           name: 'W2_SERVICEBUS_CONNECTION_STRING'
-          value: serviceBusConnectionString
+          value: serviceBusConnectionStringKeyVaultReference
         }
         {
           name: 'W2_SERVICEBUS_QUEUE_NAME'
@@ -223,7 +241,32 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
       ]
     }
   }
-  dependsOn: [appServicePlan, storageAccount, serviceBusAuthRule, appInsights, cosmosAccount]
+  dependsOn: [
+    appServicePlan
+    storageConnectionStringSecret
+    serviceBusConnectionStringSecret
+    appInsights
+    cosmosAccount
+  ]
+}
+
+resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2024-07-01' = {
+  parent: keyVault
+  name: 'add'
+  properties: {
+    accessPolicies: [
+      {
+        tenantId: subscription().tenantId
+        objectId: functionApp.identity.principalId
+        permissions: {
+          secrets: [
+            'get'
+            'list'
+          ]
+        }
+      }
+    ]
+  }
 }
 
 output storageAccountName string = storageAccount.name
@@ -235,6 +278,8 @@ output serviceBusQueueName string = serviceBusQueue.name
 output functionAppName string = functionApp.name
 output apiManagementName string = apiManagement.name
 output cosmosAccountName string = cosmosAccount.name
+output storageConnectionStringSecretName string = storageConnectionStringSecret.name
+output serviceBusConnectionStringSecretName string = serviceBusConnectionStringSecret.name
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: cosmosAccountName
@@ -295,3 +340,5 @@ resource sqlRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignm
 
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 var serviceBusConnectionString = listKeys(serviceBusAuthRule.id, serviceBusAuthRule.apiVersion).primaryConnectionString
+var storageConnectionStringKeyVaultReference = '@Microsoft.KeyVault(SecretUri=${storageConnectionStringSecret.properties.secretUri})'
+var serviceBusConnectionStringKeyVaultReference = '@Microsoft.KeyVault(SecretUri=${serviceBusConnectionStringSecret.properties.secretUri})'

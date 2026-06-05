@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict
 from foundry_agents.compliance.agent import ComplianceAgent
 from foundry_agents.config import AgentSettings, load_agent_settings
 from foundry_agents.extraction.agent import ExtractionAgent
+from foundry_agents.form_generation.agent import Form1040GenerationAgent
 from foundry_agents.human_review.agent import HumanReviewAgent
 from foundry_agents.intake.agent import IntakeAgent
 from foundry_agents.persistence import (
@@ -62,6 +63,11 @@ def map_w2_tax_facts(payload: Dict[str, Any]) -> Dict[str, Any]:
     return TaxMappingAgent.process(payload, load_agent_settings())
 
 
+def generate_form_1040_document(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a Form 1040 artifact from mapped tax facts."""
+    return Form1040GenerationAgent.process(payload, load_agent_settings())
+
+
 def evaluate_w2_compliance(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Evaluate compliance controls and emit an audit envelope."""
     return ComplianceAgent.process(payload, load_agent_settings())
@@ -96,6 +102,7 @@ TOOL_REGISTRY: Dict[str, ToolCallable] = {
     "validate_w2_facts": validate_w2_facts,
     "submit_w2_human_review": submit_w2_human_review,
     "map_w2_tax_facts": map_w2_tax_facts,
+    "generate_form_1040_document": generate_form_1040_document,
     "evaluate_w2_compliance": evaluate_w2_compliance,
     "persist_w2_pipeline_checkpoint": persist_w2_pipeline_checkpoint,
     "persist_completed_w2_pipeline": persist_completed_w2_pipeline,

@@ -88,10 +88,22 @@ class SupervisorOrchestrator:
             "payload": self.state,
         }
 
-    def route_to_compliance(self, mapping_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route mapped data to compliance check."""
-        self.state["stage"] = "compliance"
+    def route_to_form_generation(self, mapping_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Route mapped data to Form 1040 generation."""
+        self.state["stage"] = "form_generation"
         self.state["mappingResult"] = mapping_result
+
+        return {
+            "pipelineId": self.pipeline_id,
+            "correlationId": self.correlation_id,
+            "nextAgent": "form_generation",
+            "payload": self.state,
+        }
+
+    def route_to_compliance(self, form_generation_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Route generated tax artifacts to compliance check."""
+        self.state["stage"] = "compliance"
+        self.state["formGenerationResult"] = form_generation_result
 
         return {
             "pipelineId": self.pipeline_id,
@@ -204,6 +216,19 @@ class SupervisorOrchestrator:
                 "mappingProfile": checkpoint_record["taxPlanning"].get("mappingProfile"),
                 "normalizedTaxFacts": checkpoint_record["taxPlanning"].get("normalizedTaxFacts"),
                 "form1040": checkpoint_record["taxPlanning"].get("form1040"),
+            }
+        if "form1040Document" in checkpoint_record and checkpoint_record["form1040Document"].get("status"):
+            self.state["formGenerationResult"] = {
+                "generationStatus": checkpoint_record["form1040Document"]["status"],
+                "generationMode": checkpoint_record["form1040Document"].get("generationMode"),
+                "artifactMode": checkpoint_record["form1040Document"].get("artifactMode"),
+                "templateVersion": checkpoint_record["form1040Document"].get("templateVersion"),
+                "documentType": checkpoint_record["form1040Document"].get("documentType"),
+                "taxYear": checkpoint_record["form1040Document"].get("taxYear"),
+                "fieldValues": checkpoint_record["form1040Document"].get("fieldValues", {}),
+                "artifact": checkpoint_record["form1040Document"].get("artifact", {}),
+                "generatedAt": checkpoint_record["form1040Document"].get("generatedAt"),
+                "nextStep": "compliance",
             }
         if "compliance" in checkpoint_record and checkpoint_record["compliance"].get("status"):
             self.state["finalResult"] = {

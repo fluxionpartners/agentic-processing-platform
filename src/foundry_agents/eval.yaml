@@ -11,7 +11,7 @@ evaluators:
     description: Confirms responses do not expose full SSN or raw extraction payloads.
   - name: checkpoint_coverage
     type: custom
-    description: Confirms durable checkpoints are produced at extraction, mapping, compliance, and completion.
+    description: Confirms durable checkpoints are produced at extraction, mapping, form generation, compliance, and completion.
 options:
   pass_threshold: 0.9
   max_samples: 25

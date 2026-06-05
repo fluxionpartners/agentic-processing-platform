@@ -1,0 +1,23 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "APP_ENV": "local",
+    "W2_EXTRACTION_MODE": "local",
+    "W2_VALIDATION_STRICTNESS": "standard",
+    "HUMAN_REVIEW_MODE": "local-auto-approve",
+    "TAX_MAPPING_PROFILE": "us-federal-2024",
+    "FORM_1040_GENERATION_MODE": "html-template",
+    "FORM_1040_TEMPLATE_VERSION": "irs-1040-2024-html-v1",
+    "FORM_1040_ARTIFACT_MODE": "local-file",
+    "FORM_1040_ARTIFACT_PATH": ".local_state/form-1040",
+    "FORM_1040_BLOB_CONTAINER_NAME": "tax-artifacts",
+    "FORM_1040_STORAGE_ACCOUNT_URL": "",
+    "COMPLIANCE_MODE": "development",
+    "TAX_FACT_PERSISTENCE_MODE": "local-json",
+    "TAX_FACT_PERSISTENCE_PATH": ".local_state/tax-facts",
+    "AZURE_COSMOS_DATABASE_NAME": "tax-intelligence",
+    "AZURE_COSMOS_CONTAINER_NAME": "tax-facts"
+  }
+}

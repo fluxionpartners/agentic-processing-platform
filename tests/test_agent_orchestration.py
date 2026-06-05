@@ -34,6 +34,8 @@ class AgentOrchestrationTests(unittest.TestCase):
                 "validation_checkpoint",
                 "tax_mapping",
                 "tax_mapping_checkpoint",
+                "form_generation",
+                "form_generation_checkpoint",
                 "compliance",
                 "compliance_checkpoint",
                 "persistence",

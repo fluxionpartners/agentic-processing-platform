@@ -1,0 +1,320 @@
+name: Deploy Agentic Processing Platform
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment name"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - test
+          - uat
+          - prod
+      location:
+        description: "Azure region"
+        required: true
+        default: "eastus"
+        type: string
+      name_prefix:
+        description: "Azure resource name prefix"
+        required: true
+        default: "taxai"
+        type: string
+      deploy_foundry_registration:
+        description: "Run Foundry agent registration hook"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PYTHON_VERSION: "3.11"
+  DEPLOY_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+  AZURE_LOCATION: ${{ inputs.location || 'eastus' }}
+  NAME_PREFIX: ${{ inputs.name_prefix || 'taxai' }}
+
+jobs:
+  validate:
+    name: Validate Solution
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r src/foundry_agents/requirements.txt
+          python -m pip install -r src/services/w2-intake/requirements.txt
+          python -m pip install -r src/services/foundry-tools/requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Compile Python sources
+        run: python -m compileall src tests
+
+      - name: Validate Bicep templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r template; do
+            echo "Building ${template}"
+            az bicep build --file "${template}"
+          done < <(find infrastructure/services -path "*/bicep/main.bicep" -type f)
+
+  package-w2-intake:
+    name: Package W2 Intake Function
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build deployment package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          pushd src/services/w2-intake
+          zip -r ../../../artifacts/w2-intake.zip .
+          popd
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-intake-package
+          path: artifacts/w2-intake.zip
+
+  package-foundry-artifacts:
+    name: Package Foundry Agent Artifacts
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Foundry artifact package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/foundry-agent
+          cp src/foundry_agents/agent.yaml artifacts/foundry-agent/
+          cp src/foundry_agents/eval.yaml artifacts/foundry-agent/
+          cp -R src/foundry_agents/prompts artifacts/foundry-agent/prompts
+          cp -R src/foundry_agents/tools artifacts/foundry-agent/tools
+          cp -R src/foundry_agents/.foundry artifacts/foundry-agent/.foundry
+          pushd artifacts
+          zip -r foundry-agent-artifacts.zip foundry-agent
+          popd
+
+      - name: Upload Foundry artifact package
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-agent-artifacts
+          path: artifacts/foundry-agent-artifacts.zip
+
+  package-foundry-tools:
+    name: Package Foundry Tools Function
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build deployment package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/foundry-tools
+          mkdir -p build/foundry-tools artifacts
+          cp -R src/services/foundry-tools/. build/foundry-tools/
+          cp -R src/foundry_agents build/foundry-tools/foundry_agents
+          find build/foundry-tools -type d -name "__pycache__" -prune -exec rm -rf {} +
+          pushd build/foundry-tools
+          zip -r ../../artifacts/foundry-tools.zip .
+          popd
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-tools-package
+          path: artifacts/foundry-tools.zip
+
+  deploy-infrastructure:
+    name: Provision Azure Infrastructure
+    runs-on: ubuntu-latest
+    needs:
+      - package-w2-intake
+      - package-foundry-artifacts
+      - package-foundry-tools
+    environment: ${{ inputs.environment || 'dev' }}
+    outputs:
+      w2_intake_function_app_name: ${{ steps.deploy_w2_intake.outputs.function_app_name }}
+      foundry_tools_function_app_name: ${{ steps.deploy_foundry_tools.outputs.function_app_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create \
+            --name "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --location "${{ env.AZURE_LOCATION }}"
+
+      - name: Deploy W2 intake infrastructure
+        id: deploy_w2_intake
+        shell: bash
+        run: |
+          set -euo pipefail
+          function_app_name="$(az deployment group create \
+            --name "w2-intake-${{ env.DEPLOY_ENVIRONMENT }}-${{ github.run_number }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infrastructure/services/w2-intake/bicep/main.bicep \
+            --parameters \
+              namePrefix="${{ env.NAME_PREFIX }}" \
+              environment="${{ env.DEPLOY_ENVIRONMENT }}" \
+              location="${{ env.AZURE_LOCATION }}" \
+            --query "properties.outputs.functionAppName.value" \
+            --output tsv)"
+          echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy Foundry tools infrastructure
+        id: deploy_foundry_tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          function_app_name="$(az deployment group create \
+            --name "foundry-tools-${{ env.DEPLOY_ENVIRONMENT }}-${{ github.run_number }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infrastructure/services/foundry-tools/bicep/main.bicep \
+            --parameters \
+              namePrefix="${{ env.NAME_PREFIX }}" \
+              environment="${{ env.DEPLOY_ENVIRONMENT }}" \
+              location="${{ env.AZURE_LOCATION }}" \
+            --query "properties.outputs.functionAppName.value" \
+            --output tsv)"
+          echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
+
+  deploy-w2-intake:
+    name: Deploy W2 Intake Function App
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    environment: ${{ inputs.environment || 'dev' }}
+
+    steps:
+      - name: Download W2 intake package
+        uses: actions/download-artifact@v4
+        with:
+          name: w2-intake-package
+          path: artifacts
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy function package
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ needs.deploy-infrastructure.outputs.w2_intake_function_app_name }}
+          package: artifacts/w2-intake.zip
+
+  deploy-foundry-tools:
+    name: Deploy Foundry Tool Host
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    environment: ${{ inputs.environment || 'dev' }}
+
+    steps:
+      - name: Download Foundry tools package
+        uses: actions/download-artifact@v4
+        with:
+          name: foundry-tools-package
+          path: artifacts
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy function package
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}
+          package: artifacts/foundry-tools.zip
+
+  configure-foundry-agent:
+    name: Configure Foundry Agent
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-w2-intake
+      - deploy-foundry-tools
+      - package-foundry-artifacts
+    environment: ${{ inputs.environment || 'dev' }}
+    if: ${{ inputs.deploy_foundry_registration == true }}
+
+    steps:
+      - name: Download Foundry artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: foundry-agent-artifacts
+          path: artifacts
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Register Foundry agent hook
+        run: |
+          echo "Foundry registration is intentionally a hook."
+          echo "Use agent.yaml, eval.yaml, prompts, and tools manifest from artifacts/foundry-agent-artifacts.zip."
+          echo "Wire this step to Foundry MCP/CLI/SDK once the project endpoint and registration command are finalized."
+
+  smoke-test:
+    name: Deployment Smoke Test
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-w2-intake
+      - deploy-foundry-tools
+    environment: ${{ inputs.environment || 'dev' }}
+
+    steps:
+      - name: Smoke test placeholder
+        run: |
+          echo "Infrastructure and W2 intake deployment completed."
+          echo "Add authenticated endpoint smoke tests after API Management or function auth is finalized."

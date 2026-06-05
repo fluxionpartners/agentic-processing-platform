@@ -60,6 +60,20 @@ class FoundryBindingTests(unittest.TestCase):
             ).exists()
         )
 
+    def test_foundry_tools_openapi_operations_match_registry(self):
+        openapi_path = (
+            SRC_ROOT / "services" / "foundry-tools" / "openapi.json"
+        )
+        openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
+
+        operation_ids = {
+            operation["operationId"]
+            for path in openapi["paths"].values()
+            for operation in path.values()
+        }
+
+        self.assertEqual(operation_ids, set(TOOL_REGISTRY))
+
 
 if __name__ == "__main__":
     unittest.main()

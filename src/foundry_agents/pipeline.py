@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from foundry_agents.config import AgentSettings, load_agent_settings
 from foundry_agents.compliance.agent import ComplianceAgent
 from foundry_agents.extraction.agent import ExtractionAgent
+from foundry_agents.form_generation.agent import Form1040GenerationAgent
 from foundry_agents.human_review.agent import HumanReviewAgent
 from foundry_agents.intake.agent import IntakeAgent
 from foundry_agents.persistence import (
@@ -116,16 +117,27 @@ class AgentPipeline:
             mapping_result = TaxMappingAgent.process(mapping_route["payload"], self.settings)
             self.record_step("tax_mapping", "TaxMappingAgent", mapping_result)
 
-        # 6. Compliance Stage
-        compliance_route = self.orchestrator.route_to_compliance(mapping_result)
+        # 6. Form 1040 Generation Stage
+        form_generation_route = self.orchestrator.route_to_form_generation(mapping_result)
+        if "formGenerationResult" in self.orchestrator.state:
+            form_generation_result = self.orchestrator.state["formGenerationResult"]
+        else:
+            self.persist_checkpoint("tax_mapping")
+            form_generation_result = Form1040GenerationAgent.process(
+                form_generation_route["payload"], self.settings
+            )
+            self.record_step("form_generation", "Form1040GenerationAgent", form_generation_result)
+
+        # 7. Compliance Stage
+        compliance_route = self.orchestrator.route_to_compliance(form_generation_result)
         if "finalResult" in self.orchestrator.state:
             compliance_result = self.orchestrator.state["finalResult"]
         else:
-            self.persist_checkpoint("tax_mapping")
+            self.persist_checkpoint("form_generation")
             compliance_result = ComplianceAgent.process(compliance_route["payload"], self.settings)
             self.record_step("compliance", "ComplianceAgent", compliance_result)
 
-        # 7. Finalize
+        # 8. Finalize
         if self.orchestrator.state.get("status") == "success" and self.orchestrator.state.get("stage") == "complete":
             final_result = {
                 "pipelineId": self.orchestrator.pipeline_id,

@@ -12,6 +12,10 @@ from foundry_agents.config import (
     HUMAN_REVIEW_MODE_MANUAL,
     HUMAN_REVIEW_MODE_QUEUE,
 )
+from foundry_agents.form_generation.adapters import (
+    HtmlForm1040GenerationAdapter,
+    create_form_1040_generation_adapter,
+)
 from foundry_agents.human_review.adapters import (
     LocalAutoApproveHumanReviewAdapter,
     ManualHumanReviewAdapter,
@@ -44,6 +48,12 @@ class AgentAdapterTests(unittest.TestCase):
 
         self.assertIsInstance(adapter, USFederal2024W2MappingAdapter)
         self.assertEqual(adapter.name, "us-federal-2024-w2-mapping-v1")
+
+    def test_form_generation_adapter_factory_returns_html_renderer(self):
+        adapter = create_form_1040_generation_adapter(AgentSettings())
+
+        self.assertIsInstance(adapter, HtmlForm1040GenerationAdapter)
+        self.assertEqual(adapter.name, "irs-1040-html-renderer-v1")
 
     def test_human_review_adapter_factory_returns_mode_specific_adapter(self):
         self.assertIsInstance(

@@ -1,7 +1,7 @@
 name: foundry-w2-tax-orchestrator
 version: 0.1.0
 type: prompt
-description: Governed W-2 intake, extraction, validation, human review, tax mapping, compliance, and persistence orchestration.
+description: Governed W-2 intake, extraction, validation, human review, tax mapping, Form 1040 generation, compliance, and persistence orchestration.
 model:
   deployment: ${AZURE_OPENAI_DEPLOYMENT_NAME}
 instructions:
@@ -17,6 +17,10 @@ runtime:
     W2_VALIDATION_STRICTNESS: ${W2_VALIDATION_STRICTNESS}
     HUMAN_REVIEW_MODE: ${HUMAN_REVIEW_MODE}
     TAX_MAPPING_PROFILE: ${TAX_MAPPING_PROFILE}
+    FORM_1040_GENERATION_MODE: ${FORM_1040_GENERATION_MODE}
+    FORM_1040_TEMPLATE_VERSION: ${FORM_1040_TEMPLATE_VERSION}
+    FORM_1040_ARTIFACT_MODE: ${FORM_1040_ARTIFACT_MODE}
+    FORM_1040_BLOB_CONTAINER_NAME: ${FORM_1040_BLOB_CONTAINER_NAME}
     COMPLIANCE_MODE: ${COMPLIANCE_MODE}
     TAX_FACT_PERSISTENCE_MODE: ${TAX_FACT_PERSISTENCE_MODE}
 guardrails:

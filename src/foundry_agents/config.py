@@ -22,6 +22,11 @@ HUMAN_REVIEW_MODE_MANUAL = "manual"
 
 TAX_MAPPING_PROFILE_US_FEDERAL_2024 = "us-federal-2024"
 
+FORM_1040_GENERATION_MODE_HTML = "html-template"
+
+FORM_1040_ARTIFACT_MODE_LOCAL = "local-file"
+FORM_1040_ARTIFACT_MODE_BLOB = "azure-blob"
+
 COMPLIANCE_MODE_DEVELOPMENT = "development"
 COMPLIANCE_MODE_REGULATED = "regulated"
 
@@ -41,6 +46,11 @@ SUPPORTED_HUMAN_REVIEW_MODES = {
     HUMAN_REVIEW_MODE_MANUAL,
 }
 SUPPORTED_TAX_MAPPING_PROFILES = {TAX_MAPPING_PROFILE_US_FEDERAL_2024}
+SUPPORTED_FORM_1040_GENERATION_MODES = {FORM_1040_GENERATION_MODE_HTML}
+SUPPORTED_FORM_1040_ARTIFACT_MODES = {
+    FORM_1040_ARTIFACT_MODE_LOCAL,
+    FORM_1040_ARTIFACT_MODE_BLOB,
+}
 SUPPORTED_COMPLIANCE_MODES = {COMPLIANCE_MODE_DEVELOPMENT, COMPLIANCE_MODE_REGULATED}
 SUPPORTED_TAX_FACT_PERSISTENCE_MODES = {
     TAX_FACT_PERSISTENCE_DISABLED,
@@ -62,6 +72,13 @@ class AgentSettings:
     validation_strictness: str = VALIDATION_STRICTNESS_STANDARD
     human_review_mode: str = HUMAN_REVIEW_MODE_LOCAL_AUTO_APPROVE
     tax_mapping_profile: str = TAX_MAPPING_PROFILE_US_FEDERAL_2024
+    form_1040_generation_mode: str = FORM_1040_GENERATION_MODE_HTML
+    form_1040_template_version: str = "irs-1040-2024-html-v1"
+    form_1040_artifact_mode: str = FORM_1040_ARTIFACT_MODE_LOCAL
+    form_1040_artifact_path: str = ".local_state/form-1040"
+    form_1040_blob_container_name: str = "tax-artifacts"
+    form_1040_storage_account_url: str = ""
+    form_1040_storage_connection_string: str = ""
     compliance_mode: str = COMPLIANCE_MODE_DEVELOPMENT
     low_confidence_threshold: float = 0.85
     require_masked_pii_in_logs: bool = True
@@ -94,6 +111,11 @@ class AgentSettings:
             "validationStrictness": self.validation_strictness,
             "humanReviewMode": self.human_review_mode,
             "taxMappingProfile": self.tax_mapping_profile,
+            "form1040GenerationMode": self.form_1040_generation_mode,
+            "form1040TemplateVersion": self.form_1040_template_version,
+            "form1040ArtifactMode": self.form_1040_artifact_mode,
+            "form1040BlobContainerName": self.form_1040_blob_container_name,
+            "form1040StorageAccountUrlConfigured": bool(self.form_1040_storage_account_url),
             "complianceMode": self.compliance_mode,
             "lowConfidenceThreshold": self.low_confidence_threshold,
             "requireMaskedPiiInLogs": self.require_masked_pii_in_logs,
@@ -132,6 +154,18 @@ def load_agent_settings(env: Optional[Dict[str, str]] = None) -> AgentSettings:
         TAX_MAPPING_PROFILE_US_FEDERAL_2024,
         SUPPORTED_TAX_MAPPING_PROFILES,
     )
+    form_1040_generation_mode = _read_choice(
+        values,
+        "FORM_1040_GENERATION_MODE",
+        FORM_1040_GENERATION_MODE_HTML,
+        SUPPORTED_FORM_1040_GENERATION_MODES,
+    )
+    form_1040_artifact_mode = _read_choice(
+        values,
+        "FORM_1040_ARTIFACT_MODE",
+        FORM_1040_ARTIFACT_MODE_LOCAL,
+        SUPPORTED_FORM_1040_ARTIFACT_MODES,
+    )
     compliance_mode = _read_choice(
         values,
         "COMPLIANCE_MODE",
@@ -151,6 +185,20 @@ def load_agent_settings(env: Optional[Dict[str, str]] = None) -> AgentSettings:
         validation_strictness=validation_strictness,
         human_review_mode=human_review_mode,
         tax_mapping_profile=tax_mapping_profile,
+        form_1040_generation_mode=form_1040_generation_mode,
+        form_1040_template_version=values.get(
+            "FORM_1040_TEMPLATE_VERSION", "irs-1040-2024-html-v1"
+        ),
+        form_1040_artifact_mode=form_1040_artifact_mode,
+        form_1040_artifact_path=values.get("FORM_1040_ARTIFACT_PATH", ".local_state/form-1040"),
+        form_1040_blob_container_name=values.get(
+            "FORM_1040_BLOB_CONTAINER_NAME", "tax-artifacts"
+        ),
+        form_1040_storage_account_url=values.get("FORM_1040_STORAGE_ACCOUNT_URL", ""),
+        form_1040_storage_connection_string=values.get(
+            "FORM_1040_STORAGE_CONNECTION_STRING",
+            values.get("AzureWebJobsStorage", ""),
+        ),
         compliance_mode=compliance_mode,
         low_confidence_threshold=_read_float(values, "LOW_CONFIDENCE_THRESHOLD", 0.85),
         require_masked_pii_in_logs=_read_bool(values, "REQUIRE_MASKED_PII_IN_LOGS", True),
@@ -269,6 +317,22 @@ def _validate_cross_field_settings(settings: AgentSettings) -> None:
         raise ValueError("APP_ENV=prod cannot use TAX_FACT_PERSISTENCE_MODE=local-json.")
     if settings.app_env == APP_ENV_PROD and settings.tax_fact_persistence_mode == TAX_FACT_PERSISTENCE_DISABLED:
         raise ValueError("APP_ENV=prod requires durable TAX_FACT_PERSISTENCE_MODE.")
+    if settings.app_env == APP_ENV_PROD and settings.form_1040_artifact_mode == FORM_1040_ARTIFACT_MODE_LOCAL:
+        raise ValueError("APP_ENV=prod cannot use FORM_1040_ARTIFACT_MODE=local-file.")
+    if settings.form_1040_artifact_mode == FORM_1040_ARTIFACT_MODE_BLOB:
+        missing = []
+        if not settings.form_1040_storage_connection_string and not settings.form_1040_storage_account_url:
+            missing.append(
+                "FORM_1040_STORAGE_ACCOUNT_URL, FORM_1040_STORAGE_CONNECTION_STRING, or AzureWebJobsStorage"
+            )
+        if not settings.form_1040_blob_container_name:
+            missing.append("FORM_1040_BLOB_CONTAINER_NAME")
+        if missing:
+            raise ValueError(
+                "FORM_1040_ARTIFACT_MODE=azure-blob requires "
+                + ", ".join(missing)
+                + "."
+            )
     if settings.tax_fact_persistence_mode == TAX_FACT_PERSISTENCE_COSMOS:
         missing = []
         if not settings.cosmos_endpoint:

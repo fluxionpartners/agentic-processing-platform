@@ -109,7 +109,14 @@ class TaxFactPersistenceTests(unittest.TestCase):
         self.assertFalse(persistence_result["containsFullPii"])
         self.assertEqual(
             checkpoint_stages,
-            ["intake", "extraction", "validation", "tax_mapping", "compliance"],
+            [
+                "intake",
+                "extraction",
+                "validation",
+                "tax_mapping",
+                "form_generation",
+                "compliance",
+            ],
         )
         self.assertEqual(saved_record["sensitivityLabel"], "restricted-tax-pii")
         self.assertEqual(saved_record["checkpointStage"], "complete")
@@ -121,6 +128,10 @@ class TaxFactPersistenceTests(unittest.TestCase):
         self.assertEqual(
             saved_record["taxPlanning"]["normalizedTaxFacts"]["incomeSummary"]["w2Wages"],
             75000.00,
+        )
+        self.assertEqual(saved_record["form1040Document"]["status"], "success")
+        self.assertEqual(
+            saved_record["form1040Document"]["artifact"]["contentType"], "text/html"
         )
         self.assertFalse(saved_record["governance"]["rawExtractionPersisted"])
 
@@ -452,6 +463,7 @@ class TaxFactPersistenceTests(unittest.TestCase):
             self.assertNotIn("extraction", recorded_stages)
             self.assertNotIn("validation", recorded_stages)
             self.assertIn("tax_mapping", recorded_stages)
+            self.assertIn("form_generation", recorded_stages)
             self.assertIn("compliance", recorded_stages)
 
 
