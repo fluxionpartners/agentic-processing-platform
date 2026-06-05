@@ -19,9 +19,9 @@ These zones support a secure, event-driven, multi-agent workflow for W-2 process
 flowchart TD
   subgraph Ingestion[Ingestion & API Boundary]
     direction TB
-    APIM[API Management]
-    IntakeSvc[Intake Service / Azure Functions]
-    Storage[Azure Storage (raw W-2 / generated 1040 artifacts)]
+    APIM["API Management"]
+    IntakeSvc["Intake Service / Azure Functions"]
+    Storage["Azure Storage: raw W-2 and generated 1040 artifacts"]
   end
 
   subgraph Orchestration[Foundry Orchestration]
@@ -58,9 +58,9 @@ flowchart TD
 
   subgraph Governance[Governance & Observability]
     direction TB
-    Monitor[Azure Monitor / Application Insights]
-    Defender[Microsoft Defender for Cloud]
-    Entra[Entra ID]
+    Monitor["Azure Monitor / Application Insights"]
+    Defender["Microsoft Defender for Cloud"]
+    Entra["Entra ID"]
   end
 
   APIM -->|Secure API / Upload| IntakeSvc

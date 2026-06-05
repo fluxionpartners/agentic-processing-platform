@@ -55,7 +55,7 @@ deployment flow.
 flowchart TB
   Client[Client or API Management] --> IntakeFn[W2 Intake Function App]
   IntakeFn --> RawStorage[Raw W2 Blob Storage]
-  IntakeFn --> Eventing[Service Bus / Event Trigger]
+  IntakeFn --> Eventing["Service Bus / Event Trigger"]
   Eventing --> Foundry[Foundry Supervisor Agent]
   Foundry --> ToolHost[Foundry Tools Function App]
   ToolHost --> Agents[Governed Python Agent Workers]
@@ -127,9 +127,10 @@ No long-lived Azure secret is required.
   -GrantUserAccessAdministrator
 ```
 
-4. Push to `main` or run **Deploy Agentic Processing Platform** from GitHub
-   Actions.
-5. Review the workflow output for the W-2 intake Function App and Foundry tools
+4. Push to `main` to run validation checks.
+5. Run **Deploy Agentic Processing Platform** manually from GitHub Actions when
+   you are ready to provision Azure resources.
+6. Review the workflow output for the W-2 intake Function App and Foundry tools
    Function App names.
 
 Detailed setup is in [Deploy Your Own Environment](docs/deploy-your-own.md) and

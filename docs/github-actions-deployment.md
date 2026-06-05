@@ -2,7 +2,9 @@
 
 This repository is a single solution with multiple deployable units. The
 workflow in `.github/workflows/deploy-platform.yml` validates the whole solution
-once, then deploys each Azure host independently.
+on every push. Azure deployment runs only from manual `workflow_dispatch`, so
+public repository pushes do not fail when Azure environment secrets are not
+configured.
 
 For a step-by-step setup intended for someone deploying their own copy of the
 repository, see [Deploy Your Own Environment](deploy-your-own.md).
@@ -14,11 +16,12 @@ GitHub Actions
 |-- validate repo
 |-- package W2 intake function
 |-- package Foundry agent artifacts
-|-- provision Azure infrastructure
-|-- deploy W2 intake Function App
-|-- deploy Foundry tools Function App
-|-- register Foundry agent, when registration is enabled
-`-- run smoke tests
+|-- package Foundry tools function
+|-- provision Azure infrastructure, manual dispatch only
+|-- deploy W2 intake Function App, manual dispatch only
+|-- deploy Foundry tools Function App, manual dispatch only
+|-- register Foundry agent, manual dispatch and opt-in only
+`-- run smoke tests, manual dispatch only
 ```
 
 ## Bootstrap Script
@@ -108,7 +111,7 @@ is required for production runtime.
 ## Environments
 
 The workflow supports `dev`, `test`, `uat`, and `prod` through manual
-`workflow_dispatch` inputs. Pushes to `main` default to `dev`.
+`workflow_dispatch` inputs. Pushes to `main` run validation and packaging only.
 
 Use GitHub Environments for approval gates and environment-specific secrets or
 variables. A common setup is:
@@ -178,9 +181,10 @@ The repo is the system boundary. Each Azure host is a deployment boundary.
 
 ```text
 One repo commit
-|-- deploys W2 intake host
-|-- deploys tool host
-|-- registers Foundry agent
+|-- validates the solution on push
+|-- can deploy W2 intake host by manual dispatch
+|-- can deploy tool host by manual dispatch
+|-- can register Foundry agent when the hook is enabled
 `-- keeps all versions traceable together
 ```
 

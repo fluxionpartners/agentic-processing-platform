@@ -163,6 +163,7 @@ jobs:
   deploy-infrastructure:
     name: Provision Azure Infrastructure
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs:
       - package-w2-intake
       - package-foundry-artifacts
@@ -226,6 +227,7 @@ jobs:
   deploy-w2-intake:
     name: Deploy W2 Intake Function App
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: deploy-infrastructure
     environment: ${{ inputs.environment || 'dev' }}
 
@@ -252,6 +254,7 @@ jobs:
   deploy-foundry-tools:
     name: Deploy Foundry Tool Host
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: deploy-infrastructure
     environment: ${{ inputs.environment || 'dev' }}
 
@@ -283,7 +286,7 @@ jobs:
       - deploy-foundry-tools
       - package-foundry-artifacts
     environment: ${{ inputs.environment || 'dev' }}
-    if: ${{ inputs.deploy_foundry_registration == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_foundry_registration == true }}
 
     steps:
       - name: Download Foundry artifacts
@@ -308,6 +311,7 @@ jobs:
   smoke-test:
     name: Deployment Smoke Test
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs:
       - deploy-w2-intake
       - deploy-foundry-tools
