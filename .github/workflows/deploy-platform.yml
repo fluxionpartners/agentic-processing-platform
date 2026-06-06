@@ -409,23 +409,25 @@ jobs:
       - name: Register Foundry supervisor agent
         shell: pwsh
         run: |
-          $prepareOnlyArgs = @()
-          if ("${{ inputs.prepare_foundry_registration_only }}" -eq "true") {
-            $prepareOnlyArgs += "-PrepareOnly"
+          $registrationArgs = @{
+            ProjectEndpoint = "${{ env.FOUNDRY_PROJECT_ENDPOINT }}"
+            ModelDeploymentName = "${{ env.FOUNDRY_MODEL_DEPLOYMENT_NAME }}"
+            ToolEndpointBaseUrl = "${{ needs.deploy-infrastructure.outputs.foundry_tools_endpoint_base_url }}"
+            Environment = "${{ env.DEPLOY_ENVIRONMENT }}"
+            OutputDirectory = "artifacts/foundry-registration"
           }
+
+          if ("${{ inputs.prepare_foundry_registration_only }}" -eq "true") {
+            $registrationArgs["PrepareOnly"] = $true
+          }
+
           $connectionId = "${{ env.FOUNDRY_OPENAPI_CONNECTION_ID }}"
           if ([string]::IsNullOrWhiteSpace($connectionId)) {
             $connectionId = "${{ steps.ensure_foundry_connection.outputs.openapi_project_connection_id }}"
           }
+          $registrationArgs["OpenApiProjectConnectionId"] = $connectionId
 
-          ./scripts/foundry/Register-FoundryAgent.ps1 `
-            -ProjectEndpoint "${{ env.FOUNDRY_PROJECT_ENDPOINT }}" `
-            -ModelDeploymentName "${{ env.FOUNDRY_MODEL_DEPLOYMENT_NAME }}" `
-            -ToolEndpointBaseUrl "${{ needs.deploy-infrastructure.outputs.foundry_tools_endpoint_base_url }}" `
-            -OpenApiProjectConnectionId "$connectionId" `
-            -Environment "${{ env.DEPLOY_ENVIRONMENT }}" `
-            -OutputDirectory "artifacts/foundry-registration" `
-            @prepareOnlyArgs
+          ./scripts/foundry/Register-FoundryAgent.ps1 @registrationArgs
 
       - name: Upload Foundry registration artifacts
         uses: actions/upload-artifact@v4
