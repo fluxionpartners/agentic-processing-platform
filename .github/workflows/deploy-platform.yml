@@ -267,6 +267,8 @@ jobs:
         with:
           app-name: ${{ needs.deploy-infrastructure.outputs.w2_intake_function_app_name }}
           package: artifacts/w2-intake.zip
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
 
   deploy-foundry-tools:
     name: Deploy Foundry Tool Host
@@ -294,6 +296,8 @@ jobs:
         with:
           app-name: ${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}
           package: artifacts/foundry-tools.zip
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
 
   configure-foundry-agent:
     name: Configure Foundry Agent

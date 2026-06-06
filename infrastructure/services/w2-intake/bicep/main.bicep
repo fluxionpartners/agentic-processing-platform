@@ -32,7 +32,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     allowBlobPublicAccess: false
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
     }
     encryption: {
       services: {
@@ -194,8 +194,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: 'python'
         }
         {
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
+        }
+        {
+          name: 'AzureWebJobsFeatureFlags'
+          value: 'EnableWorkerIndexing'
+        }
+        {
           name: 'AzureWebJobsStorage'
-          value: storageConnectionStringKeyVaultReference
+          value: storageConnectionString
         }
         {
           name: 'W2_STORAGE_CONNECTION_STRING'
@@ -223,6 +231,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
+        }
+        {
+          name: 'ENABLE_ORYX_BUILD'
           value: 'true'
         }
         {

@@ -24,6 +24,49 @@ GitHub Actions
 `-- run smoke tests, manual dispatch only
 ```
 
+## Deployment Control Flow
+
+```mermaid
+flowchart TD
+  Dev["Developer or maintainer"] --> Push["Push to main"]
+  Dev --> Manual["Run workflow manually"]
+
+  Push --> Validate["Validate solution"]
+  Validate --> PackageW2["Package W2 intake function"]
+  Validate --> PackageTools["Package Foundry tools function"]
+  Validate --> PackageAgent["Package Foundry agent artifacts"]
+
+  Manual --> Inputs["Select environment and regions"]
+  Inputs --> Env["GitHub Environment"]
+  Env --> OIDC["GitHub OIDC token"]
+  OIDC --> Entra["Entra app registration and service principal"]
+  Entra --> AzureRBAC["Azure RBAC scoped to resource group"]
+
+  PackageW2 --> InfraGate{"github.event_name == workflow_dispatch"}
+  PackageTools --> InfraGate
+  PackageAgent --> InfraGate
+  AzureRBAC --> InfraGate
+
+  InfraGate -- "push run" --> SkipDeploy["Skip Azure provisioning and deployment"]
+  InfraGate -- "manual run" --> Preflight["Azure preflight"]
+
+  Preflight --> Providers["Register and verify Azure providers"]
+  Providers --> Compile["Compile Bicep templates"]
+  Compile --> WhatIf["Run ARM what-if"]
+  WhatIf --> Provision["Provision Azure infrastructure"]
+  Provision --> DeployW2["Deploy W2 intake Function App"]
+  Provision --> DeployTools["Deploy Foundry tools Function App"]
+  DeployW2 --> Smoke["Deployment smoke test"]
+  DeployTools --> Smoke
+  PackageAgent --> FoundryGate{"deploy_foundry_registration == true"}
+  FoundryGate -- "false" --> SkipFoundry["Skip Foundry registration hook"]
+  FoundryGate -- "true" --> RegisterFoundry["Register Foundry agent artifacts"]
+```
+
+The workflow uses `github.event_name` to separate validation from deployment.
+Pushes to `main` run validation and packaging. Azure provisioning and Function
+App deployment run only when the event is `workflow_dispatch`.
+
 ## Bootstrap Script
 
 The bootstrap script can create the Azure resource group and configure
@@ -41,6 +84,7 @@ everything GitHub Actions needs:
 
 The script uses Azure CLI and GitHub CLI to:
 
+- register required Azure resource providers in the subscription
 - create or reuse the resource group
 - create or reuse an Entra app registration
 - create or reuse a service principal
@@ -98,6 +142,12 @@ the W2 intake host and Foundry tools host. This catches unsupported API versions
 provider registration issues, resource name/location conflicts, and subscription
 quota problems before the workflow starts provisioning.
 
+Provider registration is subscription-scoped. The bootstrap and preflight scripts
+register/check the providers used by this solution, including `Microsoft.Web`,
+`Microsoft.ServiceBus`, `Microsoft.DocumentDB`, `Microsoft.Storage`,
+`Microsoft.KeyVault`, `Microsoft.ApiManagement`, `Microsoft.Insights`,
+`Microsoft.OperationalInsights`, and `Microsoft.Authorization`.
+
 Cosmos DB has its own location parameter because Cosmos capacity can differ from
 the rest of the Azure platform capacity. For dev, the workflow defaults the
 platform region to `eastus` and Cosmos DB to `eastus2`.
@@ -118,7 +168,6 @@ Current scripted secret flow:
 ```text
 Storage connection string
   -> Key Vault secret: w2-storage-connection-string
-  -> Function App setting: AzureWebJobsStorage
   -> Function App setting: W2_STORAGE_CONNECTION_STRING
 
 Service Bus connection string
@@ -136,6 +185,16 @@ use Key Vault references:
 
 Cosmos DB access uses managed identity and Cosmos DB SQL RBAC, so no Cosmos key
 is required for production runtime.
+
+`AzureWebJobsStorage` is intentionally set to the concrete Function storage
+connection string. The Azure Functions deployment action uses this setting to
+upload `WEBSITE_RUN_FROM_PACKAGE` content for Linux Consumption apps and cannot
+publish when the value is a Key Vault reference. Business/runtime data settings
+continue to use Key Vault references or managed identity where supported.
+
+Python Function Apps use the v2 programming model with worker indexing enabled.
+The workflow requests Oryx remote build during Function deployment so Azure
+installs Python dependencies from `requirements.txt` before trigger sync.
 
 ## Environments
 
@@ -166,6 +225,11 @@ The workflow fully supports:
 The Foundry tools infrastructure also provisions the Blob container used for
 draft Form 1040 artifacts and configures the tools Function App for Blob-backed
 artifact storage.
+
+Both Function Apps use the shared environment-level Log Analytics workspace and
+Application Insights component created by the W2 intake infrastructure. Separate
+observability resources should be introduced only for distinct ownership,
+retention, compliance, or scale boundaries.
 
 The workflow still has a guarded hook for:
 

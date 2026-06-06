@@ -30,6 +30,38 @@ function Invoke-AzChecked {
     }
 }
 
+function Ensure-ResourceProviderRegistration {
+    param([string[]]$Namespaces)
+
+    foreach ($namespace in $Namespaces) {
+        $state = az provider show `
+            --namespace $namespace `
+            --query registrationState `
+            --output tsv
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Azure CLI command failed: az provider show --namespace $namespace"
+        }
+
+        if ($state -eq 'Registered') {
+            Write-Host "Resource provider already registered: $namespace"
+            continue
+        }
+
+        Write-Host "Registering resource provider: $namespace"
+        az provider register `
+            --namespace $namespace `
+            --wait `
+            --only-show-errors | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to register Azure resource provider '$namespace'. Register it with an identity that has subscription-level provider registration permissions, then rerun preflight."
+        }
+
+        Write-Host "Registered resource provider: $namespace"
+    }
+}
+
 function Get-AzJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -165,6 +197,18 @@ if ([string]::IsNullOrWhiteSpace($CosmosLocation)) {
 $w2CosmosAccountName = "$($NamePrefix.ToLower())$($Environment.ToLower())cosmos"
 $w2ApiManagementName = "$($NamePrefix.ToLower())$($Environment.ToLower())apim"
 
+$requiredResourceProviders = @(
+    'Microsoft.ApiManagement',
+    'Microsoft.Authorization',
+    'Microsoft.DocumentDB',
+    'Microsoft.Insights',
+    'Microsoft.KeyVault',
+    'Microsoft.OperationalInsights',
+    'Microsoft.ServiceBus',
+    'Microsoft.Storage',
+    'Microsoft.Web'
+)
+
 $templates = @(
     @{
         Name = 'w2-intake'
@@ -182,6 +226,10 @@ Write-Host "Environment: $Environment"
 Write-Host "Location: $Location"
 Write-Host "Cosmos location: $CosmosLocation"
 Write-Host "Name prefix: $NamePrefix"
+
+Write-Host ""
+Write-Host "Checking Azure resource provider registrations"
+Ensure-ResourceProviderRegistration -Namespaces $requiredResourceProviders
 
 Write-Host ""
 Write-Host "Checking existing Azure resource health"

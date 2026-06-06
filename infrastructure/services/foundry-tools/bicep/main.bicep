@@ -65,12 +65,16 @@ param form1040TemplateVersion string = 'irs-1040-2024-html-v1'
 @description('Form 1040 artifact storage container')
 param form1040BlobContainerName string = 'tax-artifacts'
 
+@description('Shared Log Analytics workspace name for this environment')
+param sharedLogWorkspaceName string = toLower('${namePrefix}${environment}law')
+
+@description('Shared Application Insights component name for this environment')
+param sharedAppInsightsName string = toLower('${namePrefix}${environment}ai')
+
 var storageAccountName = toLower('${namePrefix}${environment}toolstg')
 var functionAppName = toLower('${namePrefix}${environment}toolsfn')
 var appServicePlanName = toLower('${namePrefix}${environment}toolsplan')
 var keyVaultName = toLower('${namePrefix}${environment}toolskv')
-var logWorkspaceName = toLower('${namePrefix}${environment}toolslaw')
-var appInsightsName = toLower('${namePrefix}${environment}toolsai')
 var storageConnectionStringSecretName = 'foundry-tools-storage-connection-string'
 var form1040ArtifactMode = 'azure-blob'
 
@@ -86,7 +90,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     allowBlobPublicAccess: false
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
     }
     encryption: {
       services: {
@@ -131,24 +135,12 @@ resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-0
   }
 }
 
-resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: logWorkspaceName
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-  }
+resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
+  name: sharedLogWorkspaceName
 }
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logWorkspace.id
-  }
+resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: sharedAppInsightsName
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
@@ -185,8 +177,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: 'python'
         }
         {
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
+        }
+        {
+          name: 'AzureWebJobsFeatureFlags'
+          value: 'EnableWorkerIndexing'
+        }
+        {
           name: 'AzureWebJobsStorage'
-          value: storageConnectionStringKeyVaultReference
+          value: storageConnectionString
         }
         {
           name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
@@ -198,6 +198,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
+        }
+        {
+          name: 'ENABLE_ORYX_BUILD'
           value: 'true'
         }
         {
@@ -343,6 +347,8 @@ output functionAppName string = functionApp.name
 output functionAppDefaultHostName string = functionApp.properties.defaultHostName
 output keyVaultName string = keyVault.name
 output storageAccountName string = storageAccount.name
+output sharedLogWorkspaceName string = logWorkspace.name
+output sharedAppInsightsName string = appInsights.name
 output form1040BlobContainerName string = form1040ArtifactContainer.name
 output storageConnectionStringSecretName string = storageConnectionStringSecret.name
 output toolEndpointBaseUrl string = 'https://${functionApp.properties.defaultHostName}/api'

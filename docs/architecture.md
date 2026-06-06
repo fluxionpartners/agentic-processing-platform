@@ -165,6 +165,7 @@ flowchart TD
 - Capture telemetry from agent executions, tool calls, and APIs.
 - Provide alerting for errors, latency, and security events.
 - Maintain dashboards for operational health and compliance.
+- Use one shared Log Analytics workspace and Application Insights component per environment for this platform unless ownership, retention, or compliance boundaries require separation.
 
 ### Microsoft Defender for Cloud
 - Monitor cloud security posture and configuration drift.
@@ -185,6 +186,87 @@ The architecture enforces the following boundaries:
 - AI tools and Foundry agents access data using managed identities.
 - Governance and monitoring are separated from business data.
 - Audit and compliance telemetry is collected independently of application data.
+
+## Runtime Security And Access Flow
+
+```mermaid
+flowchart TD
+  User["Authenticated user or upstream app"] --> APIM["API Management"]
+  APIM --> Intake["W2 intake Function App"]
+
+  subgraph Identity["Identity and access control"]
+    Entra["Microsoft Entra ID"]
+    GitHubSP["GitHub Actions service principal"]
+    IntakeMI["W2 intake managed identity"]
+    ToolsMI["Foundry tools managed identity"]
+    RBAC["Azure RBAC and data-plane RBAC"]
+  end
+
+  subgraph Secrets["Secret and configuration boundary"]
+    KV1["W2 intake Key Vault"]
+    KV2["Foundry tools Key Vault"]
+    RuntimeRefs["Key Vault app setting references"]
+    HostStorage["AzureWebJobsStorage platform setting"]
+  end
+
+  subgraph DataPlane["Application data plane"]
+    RawStorage["Storage account for raw W2 documents"]
+    ArtifactStorage["Storage account for 1040 artifacts"]
+    Bus["Service Bus ingestion queue"]
+    Cosmos["Cosmos DB tax facts and checkpoints"]
+  end
+
+  subgraph FoundryLayer["Foundry orchestration layer"]
+    Foundry["Azure AI Foundry supervisor agent"]
+    ToolHost["Foundry tools Function App"]
+    Tools["Governed Python tool registry"]
+    DocIntel["Document Intelligence"]
+    OpenAI["Azure OpenAI deployment"]
+  end
+
+  GitHubSP -->|"Contributor and User Access Administrator scoped to resource group"| RBAC
+  GitHubSP -->|"Deploy Bicep and Function packages"| Intake
+  GitHubSP -->|"Deploy Bicep and Function packages"| ToolHost
+
+  Entra --> APIM
+  Entra --> GitHubSP
+  Entra --> IntakeMI
+  Entra --> ToolsMI
+
+  Intake -->|"Platform host storage uses concrete connection string"| HostStorage
+  ToolHost -->|"Platform host storage uses concrete connection string"| HostStorage
+
+  IntakeMI -->|"get and list secrets"| KV1
+  ToolsMI -->|"get and list secrets"| KV2
+  KV1 --> RuntimeRefs
+  KV2 --> RuntimeRefs
+
+  Intake -->|"Store raw document"| RawStorage
+  Intake -->|"Send ingestion event"| Bus
+  Bus -->|"Trigger or resume workflow"| Foundry
+
+  Foundry -->|"HTTP tool call"| ToolHost
+  ToolHost --> Tools
+  Tools -->|"Extract fields"| DocIntel
+  Tools -->|"Reason and map"| OpenAI
+  Tools -->|"Persist governed facts"| Cosmos
+  Tools -->|"Store generated 1040"| ArtifactStorage
+
+  ToolsMI -->|"Cosmos DB SQL data contributor"| Cosmos
+  ToolsMI -->|"Storage Blob Data Contributor"| ArtifactStorage
+  IntakeMI -->|"Storage and messaging access through configured settings"| RawStorage
+  IntakeMI -->|"Messaging access through configured settings"| Bus
+```
+
+Key points for security review:
+
+- GitHub Actions uses OIDC federation, not a stored Azure client secret.
+- The GitHub service principal is scoped to the environment resource group.
+- Runtime Function Apps use system-assigned managed identities.
+- Business connection strings are stored in Key Vault and referenced from app settings.
+- Cosmos DB runtime access uses managed identity and Cosmos DB SQL RBAC.
+- `AzureWebJobsStorage` is a platform host setting used by Azure Functions and package deployment.
+- Storage accounts disable anonymous blob access; network posture depends on the hosting plan and deployment runner model.
 
 ## Data Flow Summary
 

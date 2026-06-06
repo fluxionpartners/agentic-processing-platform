@@ -88,6 +88,29 @@ function Ensure-RoleAssignment {
     Write-Host "Created role assignment: $RoleName"
 }
 
+function Ensure-ResourceProviderRegistration {
+    param([string[]]$Namespaces)
+
+    foreach ($namespace in $Namespaces) {
+        $state = az provider show `
+            --namespace $namespace `
+            --query registrationState `
+            --output tsv
+
+        if ($state -eq "Registered") {
+            Write-Host "Resource provider already registered: $namespace"
+            continue
+        }
+
+        Write-Host "Registering resource provider: $namespace"
+        az provider register `
+            --namespace $namespace `
+            --wait `
+            --only-show-errors | Out-Null
+        Write-Host "Registered resource provider: $namespace"
+    }
+}
+
 function Get-ServicePrincipalObjectId {
     param([string]$ApplicationId)
 
@@ -246,6 +269,20 @@ Assert-GuidValue -Name "SubscriptionId" -Value $SubscriptionId
 Assert-GuidValue -Name "TenantId" -Value $TenantId
 
 az account set --subscription $SubscriptionId
+
+$requiredResourceProviders = @(
+    "Microsoft.ApiManagement",
+    "Microsoft.Authorization",
+    "Microsoft.DocumentDB",
+    "Microsoft.Insights",
+    "Microsoft.KeyVault",
+    "Microsoft.OperationalInsights",
+    "Microsoft.ServiceBus",
+    "Microsoft.Storage",
+    "Microsoft.Web"
+)
+
+Ensure-ResourceProviderRegistration -Namespaces $requiredResourceProviders
 
 $resourceGroupExists = az group exists --name $ResourceGroupName | ConvertFrom-Json
 if (-not $resourceGroupExists) {
