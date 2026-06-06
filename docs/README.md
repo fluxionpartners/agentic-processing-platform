@@ -1,7 +1,7 @@
 # Documentation
 
 This folder contains the implementation, architecture, deployment, and Foundry
-binding documentation for the Microsoft Foundry Tax Intelligence Platform.
+binding documentation for the Agentic Processing Platform.
 
 ## Start Here
 
@@ -22,8 +22,8 @@ binding documentation for the Microsoft Foundry Tax Intelligence Platform.
 | [API Documentation](API.md) | API contracts and request/response examples. |
 | [Solution Overview](solution-overview.md) | Service pipeline and integration overview. |
 | [W-2 Intake Service Design](w2-intake-service-design.md) | Detailed intake service design. |
-| [Enterprise Blueprint](../enterprise-foundry-tax-ai-blueprint.md) | Broader reference architecture and rationale. |
-| [Implementation Phases](../implementation-phases.md) | Delivery roadmap and staged build-out. |
+| [Enterprise Blueprint](enterprise-foundry-tax-ai-blueprint.md) | Broader reference architecture and rationale. |
+| [Implementation Phases](implementation-phases.md) | Delivery roadmap and staged build-out. |
 | [Getting Started](../GETTING_STARTED.md) | Local setup and validation commands. |
 | [Deployment Guide](../DEPLOYMENT_GUIDE.md) | Deployment options and operational notes. |
 

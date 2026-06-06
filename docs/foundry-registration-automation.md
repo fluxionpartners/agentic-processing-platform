@@ -58,7 +58,8 @@ that provisioning script before configuring GitHub Actions:
   -FoundryAccountName "taxaidevfoundry" `
   -FoundryProjectName "taxai-dev-project" `
   -FoundryModelDeploymentName "gpt-4o-mini-dev" `
-  -FoundryOpenApiConnectionName "w2toolsfnkey"
+  -FoundryOpenApiConnectionName "w2toolsfnkey" `
+  -GrantUserAccessAdministrator
 ```
 
 This calls:
@@ -118,7 +119,24 @@ run bootstrap without `-ProvisionFoundry` and pass the existing values:
 ```
 
 The bootstrap script configures GitHub OIDC, resource group scoped Azure RBAC,
-provider registration, and the Foundry environment variables.
+provider registration, Foundry project scoped RBAC, and the Foundry environment
+variables.
+
+The GitHub Actions service principal needs two permission layers:
+
+```text
+Resource group Contributor
+  -> provision Azure infrastructure and deploy Function Apps
+
+Foundry Project Manager on the Foundry project
+  -> create/update the supervisor agent and OpenAPI tool binding
+```
+
+The second role is required because agent registration calls the Foundry data
+plane and needs `Microsoft.CognitiveServices/accounts/AIServices/agents/write`.
+If registration fails with that data action, rerun bootstrap with
+`-FoundryAccountName` and `-FoundryProjectName` so the project-scoped Foundry
+role is assigned to the GitHub Actions service principal.
 
 ## Workflow Sequence
 
@@ -175,6 +193,9 @@ route and that the OpenAPI operation IDs satisfy the Foundry naming rule.
 Automated:
 
 - GitHub OIDC bootstrap and environment variables.
+- Foundry account/project/model deployment through `Ensure-FoundryProject.ps1`
+  when `-ProvisionFoundry` is selected.
+- Foundry project scoped RBAC for the GitHub Actions service principal.
 - Azure infrastructure and Function App deployment.
 - Foundry tools Function App endpoint capture.
 - Foundry project connection creation/update for Function-key auth.
@@ -183,10 +204,9 @@ Automated:
 
 Not yet automated:
 
-- Creating the Foundry account/project itself.
-- Deploying the model into the Foundry project.
 - Registering/running Foundry evaluation suites.
 
-Those are separate lifecycle steps because many teams manage Foundry projects
-and model deployments centrally. The workflow is ready to consume those
-environment-specific values once they exist.
+Foundry provisioning remains optional because many teams manage Foundry projects
+and model deployments centrally. This repository can either create them through
+scripted infrastructure or consume environment-specific values supplied by a
+central platform team.

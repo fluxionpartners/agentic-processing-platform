@@ -1,6 +1,7 @@
 # Implementation Phases
 
-This repository now follows a phased delivery model for the Microsoft Foundry Tax Intelligence Platform.
+This repository follows a phased delivery model for the Agentic Processing
+Platform's Microsoft Foundry tax intelligence scenario.
 
 ## Phase 1 – Secure Prototype
 

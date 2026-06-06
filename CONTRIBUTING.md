@@ -1,4 +1,4 @@
-# Contributing to the Microsoft Foundry Tax Intelligence Platform
+# Contributing to the Agentic Processing Platform
 
 Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to this project.
 

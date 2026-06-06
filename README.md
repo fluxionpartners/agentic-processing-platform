@@ -1,19 +1,23 @@
-# Microsoft Foundry Tax Intelligence Platform
+# Agentic Processing Platform
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-green)](https://www.python.org/downloads/)
 [![Azure](https://img.shields.io/badge/Azure-Functions%20%7C%20Cosmos%20DB%20%7C%20Storage-0078D4)](https://azure.microsoft.com/)
 [![Microsoft Foundry](https://img.shields.io/badge/Microsoft-Foundry-512BD4)](https://aka.ms/foundry)
 [![Infrastructure](https://img.shields.io/badge/IaC-Bicep-blue)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
 
-Enterprise reference implementation for a Microsoft Foundry-backed tax document
-processing platform. The solution demonstrates governed W-2 intake, extraction,
-validation, human review, tax mapping, draft Form 1040 generation, compliance,
-and durable persistence.
+Enterprise reference implementation for agentic document processing on
+Microsoft Foundry and Azure. The included tax intelligence scenario demonstrates
+governed W-2 intake, extraction, validation, human review, tax mapping, draft
+Form 1040 generation, compliance, and durable persistence.
 
 This repository is designed as a professional starting point for teams
 evaluating agentic orchestration on Azure. It keeps local development,
 production-equivalent adapters, infrastructure, CI/CD, and Foundry binding
 artifacts in one versioned solution.
+
+Built by [Fluxion Partners](https://fluxionpartners.com) as a reusable
+engagement accelerator for secure Azure AI Foundry, LLMOps, and regulated
+document-processing programs.
 
 ## What This Builds
 
@@ -180,6 +184,8 @@ configured Foundry project and model deployment. See
 | [Architecture](docs/architecture.md) | Logical architecture and security boundaries |
 | [Foundry Tool Execution Flow](docs/foundry-tool-execution-flow.md) | HTTP tool host and registry flow |
 | [Agent-To-Agent vs Tools](docs/agent-to-agent-vs-tools.md) | Design pattern comparison |
+| [Enterprise Blueprint](docs/enterprise-foundry-tax-ai-blueprint.md) | Broader enterprise reference architecture |
+| [Implementation Phases](docs/implementation-phases.md) | Delivery roadmap and staged build-out |
 
 ## Validation
 
@@ -194,3 +200,7 @@ az bicep build --file infrastructure/foundry/bicep/main.bicep
 ## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+---
+
+Built by [Fluxion Partners](https://fluxionpartners.com).

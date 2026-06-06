@@ -84,7 +84,8 @@ everything GitHub Actions needs:
   -FoundryAccountName "<foundry-account-name>" `
   -FoundryProjectName "<foundry-project-name>" `
   -FoundryModelDeploymentName "<model-deployment-name>" `
-  -FoundryOpenApiConnectionName "w2toolsfnkey"
+  -FoundryOpenApiConnectionName "w2toolsfnkey" `
+  -GrantUserAccessAdministrator
 ```
 
 The script uses Azure CLI and GitHub CLI to:
@@ -95,6 +96,8 @@ The script uses Azure CLI and GitHub CLI to:
 - create or reuse a service principal
 - create a GitHub Actions federated credential for the selected GitHub Environment
 - assign `Contributor` on the resource group
+- assign `Foundry Project Manager` on the Foundry project when
+  `FoundryAccountName` and `FoundryProjectName` are provided
 - create the GitHub Environment
 - set GitHub environment secrets
 - set GitHub environment variables
@@ -102,6 +105,19 @@ The script uses Azure CLI and GitHub CLI to:
 
 Use `-GrantUserAccessAdministrator` only when the workflow must create Azure RBAC
 role assignments. Keep that permission scoped to the resource group.
+
+Foundry agent registration uses the Foundry data plane, not only Azure ARM.
+The GitHub Actions service principal therefore needs a Foundry project-scoped
+role with `Microsoft.CognitiveServices/accounts/AIServices/agents/write`. The
+bootstrap script grants `Foundry Project Manager` at:
+
+```text
+/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<foundry-account>/projects/<foundry-project>
+```
+
+If you see `PermissionDenied` for `AIServices/agents/write`, rerun bootstrap
+with `-FoundryAccountName` and `-FoundryProjectName`, wait a few minutes for
+RBAC propagation, and rerun the workflow.
 
 ## Required Local Tools
 

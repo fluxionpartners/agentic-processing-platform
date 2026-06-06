@@ -1,6 +1,9 @@
 # Logical Architecture
 
-This document provides a clear, professional logical architecture for the Microsoft Foundry Tax Intelligence Platform. It is designed for enterprise review and highlights component responsibilities, data flows, and security boundaries.
+This document provides a clear, professional logical architecture for the
+Microsoft Foundry tax intelligence scenario in the Agentic Processing Platform.
+It is designed for enterprise review and highlights component responsibilities,
+data flows, and security boundaries.
 
 ## Architecture Overview
 

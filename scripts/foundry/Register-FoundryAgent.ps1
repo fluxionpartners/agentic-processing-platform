@@ -20,6 +20,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSNativeCommandUseErrorActionPreference = $true
+}
 
 function Resolve-RequiredPath {
     param(
@@ -225,8 +228,20 @@ $response = az rest `
     --method post `
     --uri $uri `
     --headers "Authorization=Bearer $token" "Content-Type=application/json" `
-    --body "@$registrationPayloadPath"
+    --body "@$registrationPayloadPath" `
+    --only-show-errors
 
 $responsePath = Join-Path $OutputDirectory "registration-response.json"
 $response | Set-Content -Path $responsePath -Encoding utf8
 Write-Host "Foundry agent registration response written to: $responsePath"
+
+if ([string]::IsNullOrWhiteSpace($response)) {
+    throw "Foundry agent registration returned an empty response."
+}
+
+$responseObject = $response | ConvertFrom-Json
+if ($responseObject.name -and $responseObject.name -ne $agentName) {
+    throw "Foundry returned agent name '$($responseObject.name)' but the manifest requested '$agentName'."
+}
+
+Write-Host "Registered Foundry supervisor agent: $agentName"

@@ -31,6 +31,8 @@ param(
 
     [string]$FoundryOpenApiConnectionName = "w2toolsfnkey",
 
+    [string]$FoundryProjectRoleName = "Foundry Project Manager",
+
     [switch]$ProvisionFoundry,
 
     [string]$FoundryLocation = "",
@@ -416,6 +418,18 @@ if ($GrantUserAccessAdministrator) {
         -Scope $resourceGroup.id
 }
 
+if ($FoundryAccountName -and $FoundryProjectName) {
+    $foundryProjectScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName/projects/$FoundryProjectName"
+    Write-Host "Configuring Foundry project RBAC scope: $foundryProjectScope"
+    Ensure-RoleAssignment `
+        -Assignee $appId `
+        -RoleName $FoundryProjectRoleName `
+        -Scope $foundryProjectScope
+}
+elseif ($FoundryProjectEndpoint -or $FoundryModelDeploymentName) {
+    Write-Warning "Foundry project RBAC was not configured because FoundryAccountName and FoundryProjectName were not both provided. Agent registration needs a Foundry data-plane role such as '$FoundryProjectRoleName' at the project scope."
+}
+
 gh api `
     --method PUT `
     "repos/$owner/$repoName/environments/$Environment" `
@@ -451,6 +465,9 @@ Write-Host "Configured environment secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZ
 Write-Host "Configured environment variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NAME_PREFIX"
 if ($FoundryProjectEndpoint -or $FoundryAccountName -or $FoundryProjectName -or $FoundryModelDeploymentName -or $FoundryOpenApiConnectionName) {
     Write-Host "Configured Foundry variables when provided: FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_ACCOUNT_NAME, FOUNDRY_PROJECT_NAME, FOUNDRY_MODEL_DEPLOYMENT_NAME, FOUNDRY_OPENAPI_CONNECTION_NAME"
+    if ($FoundryAccountName -and $FoundryProjectName) {
+        Write-Host "Configured Foundry project RBAC for the GitHub Actions service principal: $FoundryProjectRoleName"
+    }
 }
 Write-Host ""
 Write-Host "Next: run the 'Deploy Agentic Processing Platform' workflow for environment '$Environment'."

@@ -1,8 +1,8 @@
-# Microsoft Foundry Tax Intelligence Platform
+# Agentic Processing Platform
 
-Enterprise reference implementation for governed W-2 processing, Microsoft
-Foundry orchestration, draft Form 1040 generation, compliance, and durable tax
-fact persistence.
+Enterprise reference implementation for governed document processing,
+Microsoft Foundry orchestration, draft Form 1040 generation, compliance, and
+durable tax fact persistence.
 
 ## Read First
 

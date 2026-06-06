@@ -1,5 +1,5 @@
 # Enterprise Multi-Agent Orchestration Blueprint
-## Microsoft Foundry Tax Intelligence Platform
+## Agentic Processing Platform Tax Intelligence Scenario
 
 This blueprint defines a production-ready Microsoft Foundry-based enterprise platform for converting W-2 documents into reusable tax intelligence and 1040 preparation inputs. It is designed for regulated environments with strong security, governance, auditability, and extensibility.
 
