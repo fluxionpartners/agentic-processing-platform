@@ -69,7 +69,7 @@ function Test-AzureResourceExists {
         'json'
     )
 
-    return ($null -ne $resources -and $resources.Count -gt 0)
+    return ($null -ne $resources -and @($resources).Count -gt 0)
 }
 
 function Assert-ProvisioningState {
