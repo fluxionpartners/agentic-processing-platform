@@ -3,6 +3,9 @@ param namePrefix string = 'taxai'
 param location string = resourceGroup().location
 param environment string = 'dev'
 
+@description('Azure region for Cosmos DB. Cosmos capacity can differ from the rest of the platform region.')
+param cosmosLocation string = location
+
 var storageAccountName = toLower('${namePrefix}${environment}stg')
 var apiMgmtName = toLower('${namePrefix}${environment}apim')
 var functionAppName = toLower('${namePrefix}${environment}fn')
@@ -283,13 +286,13 @@ output serviceBusConnectionStringSecretName string = serviceBusConnectionStringS
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: cosmosAccountName
-  location: location
+  location: cosmosLocation
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
     locations: [
       {
-        locationName: location
+        locationName: cosmosLocation
         failoverPriority: 0
         isZoneRedundant: false
       }

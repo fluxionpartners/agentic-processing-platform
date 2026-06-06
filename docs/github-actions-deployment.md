@@ -89,6 +89,7 @@ can run locally:
   -ResourceGroupName "rg-agentic-tax-dev" `
   -Environment dev `
   -Location eastus `
+  -CosmosLocation eastus2 `
   -NamePrefix taxai
 ```
 
@@ -96,6 +97,10 @@ The preflight compiles the deployable Bicep templates and runs ARM `what-if` for
 the W2 intake host and Foundry tools host. This catches unsupported API versions,
 provider registration issues, resource name/location conflicts, and subscription
 quota problems before the workflow starts provisioning.
+
+Cosmos DB has its own location parameter because Cosmos capacity can differ from
+the rest of the Azure platform capacity. For dev, the workflow defaults the
+platform region to `eastus` and Cosmos DB to `eastus2`.
 
 If preflight reports `SubscriptionIsOverQuotaForSku` for
 `Microsoft.Web/serverFarms`, the Bicep is valid but the subscription does not
@@ -136,6 +141,8 @@ is required for production runtime.
 
 The workflow supports `dev`, `test`, `uat`, and `prod` through manual
 `workflow_dispatch` inputs. Pushes to `main` run validation and packaging only.
+The manual dispatch inputs include a platform `location` and a separate
+`cosmos_location` for the Cosmos DB account.
 
 Use GitHub Environments for approval gates and environment-specific secrets or
 variables. A common setup is:

@@ -21,6 +21,11 @@ on:
         required: true
         default: "eastus"
         type: string
+      cosmos_location:
+        description: "Azure region for Cosmos DB"
+        required: true
+        default: "eastus2"
+        type: string
       name_prefix:
         description: "Azure resource name prefix"
         required: true
@@ -40,6 +45,7 @@ env:
   PYTHON_VERSION: "3.11"
   DEPLOY_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
   AZURE_LOCATION: ${{ inputs.location || 'eastus' }}
+  AZURE_COSMOS_LOCATION: ${{ inputs.cosmos_location || 'eastus2' }}
   NAME_PREFIX: ${{ inputs.name_prefix || 'taxai' }}
 
 jobs:
@@ -197,6 +203,7 @@ jobs:
             -ResourceGroupName "${{ vars.AZURE_RESOURCE_GROUP }}" `
             -Environment "${{ env.DEPLOY_ENVIRONMENT }}" `
             -Location "${{ env.AZURE_LOCATION }}" `
+            -CosmosLocation "${{ env.AZURE_COSMOS_LOCATION }}" `
             -NamePrefix "${{ env.NAME_PREFIX }}"
 
       - name: Deploy W2 intake infrastructure
@@ -212,6 +219,7 @@ jobs:
               namePrefix="${{ env.NAME_PREFIX }}" \
               environment="${{ env.DEPLOY_ENVIRONMENT }}" \
               location="${{ env.AZURE_LOCATION }}" \
+              cosmosLocation="${{ env.AZURE_COSMOS_LOCATION }}" \
             --query "properties.outputs.functionAppName.value" \
             --output tsv)"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"

@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Location,
 
+    [Parameter(Mandatory = $false)]
+    [string]$CosmosLocation,
+
     [Parameter(Mandatory = $true)]
     [string]$Environment,
 
@@ -155,6 +158,10 @@ function Test-ExistingApiManagementHealth {
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+if ([string]::IsNullOrWhiteSpace($CosmosLocation)) {
+    $CosmosLocation = $Location
+}
+
 $w2CosmosAccountName = "$($NamePrefix.ToLower())$($Environment.ToLower())cosmos"
 $w2ApiManagementName = "$($NamePrefix.ToLower())$($Environment.ToLower())apim"
 
@@ -173,6 +180,7 @@ Write-Host "Azure deployment preflight"
 Write-Host "Resource group: $ResourceGroupName"
 Write-Host "Environment: $Environment"
 Write-Host "Location: $Location"
+Write-Host "Cosmos location: $CosmosLocation"
 Write-Host "Name prefix: $NamePrefix"
 
 Write-Host ""
@@ -193,6 +201,15 @@ foreach ($template in $templates) {
 
 foreach ($template in $templates) {
     $deploymentName = "preflight-$($template.Name)-$Environment"
+    $parameters = @(
+        "namePrefix=$NamePrefix"
+        "environment=$Environment"
+        "location=$Location"
+    )
+
+    if ($template.Name -eq 'w2-intake') {
+        $parameters += "cosmosLocation=$CosmosLocation"
+    }
 
     Write-Host ""
     Write-Host "Running ARM what-if: $($template.Name)"
@@ -207,9 +224,7 @@ foreach ($template in $templates) {
         '--template-file'
         $template.File
         '--parameters'
-        "namePrefix=$NamePrefix"
-        "environment=$Environment"
-        "location=$Location"
+        $parameters
         '--result-format'
         'ResourceIdOnly'
     )
