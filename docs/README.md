@@ -74,4 +74,5 @@ python -m unittest discover -s tests
 python -m compileall src tests
 az bicep build --file infrastructure/services/w2-intake/bicep/main.bicep
 az bicep build --file infrastructure/services/foundry-tools/bicep/main.bicep
+az bicep build --file infrastructure/foundry/bicep/main.bicep
 ```

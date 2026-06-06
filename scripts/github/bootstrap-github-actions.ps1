@@ -31,6 +31,21 @@ param(
 
     [string]$FoundryOpenApiConnectionName = "w2toolsfnkey",
 
+    [switch]$ProvisionFoundry,
+
+    [string]$FoundryLocation = "",
+
+    [string]$FoundryModelName = "gpt-4o-mini",
+
+    [string]$FoundryModelVersion = "2024-07-18",
+
+    [ValidateSet("Standard", "GlobalStandard", "DataZoneStandard")]
+    [string]$FoundryModelSkuName = "GlobalStandard",
+
+    [int]$FoundryModelSkuCapacity = 10,
+
+    [switch]$SkipFoundryModelDeployment,
+
     [switch]$GrantUserAccessAdministrator
 )
 
@@ -315,6 +330,45 @@ $repoName = $repo.Repo
 
 if (-not $AppRegistrationName) {
     $AppRegistrationName = "github-$repoName-$Environment"
+}
+
+if ($ProvisionFoundry) {
+    if (-not $FoundryAccountName) {
+        $FoundryAccountName = "$NamePrefix$Environment-foundry"
+    }
+    if (-not $FoundryProjectName) {
+        $FoundryProjectName = "$NamePrefix-$Environment-project"
+    }
+    if (-not $FoundryModelDeploymentName) {
+        $FoundryModelDeploymentName = "$FoundryModelName-$Environment"
+    }
+    if (-not $FoundryLocation) {
+        $FoundryLocation = $Location
+    }
+
+    $ensureFoundryScript = Resolve-Path -Path "scripts/foundry/Ensure-FoundryProject.ps1" -ErrorAction SilentlyContinue
+    if (-not $ensureFoundryScript) {
+        throw "Foundry provisioning script not found: scripts/foundry/Ensure-FoundryProject.ps1"
+    }
+
+    $foundryArgs = @(
+        "-SubscriptionId", $SubscriptionId,
+        "-ResourceGroupName", $ResourceGroupName,
+        "-FoundryAccountName", $FoundryAccountName,
+        "-FoundryProjectName", $FoundryProjectName,
+        "-Location", $FoundryLocation,
+        "-ModelDeploymentName", $FoundryModelDeploymentName,
+        "-ModelName", $FoundryModelName,
+        "-ModelVersion", $FoundryModelVersion,
+        "-ModelSkuName", $FoundryModelSkuName,
+        "-ModelSkuCapacity", $FoundryModelSkuCapacity
+    )
+    if ($SkipFoundryModelDeployment) {
+        $foundryArgs += "-SkipModelDeployment"
+    }
+
+    & $ensureFoundryScript.Path @foundryArgs
+    $FoundryProjectEndpoint = "https://$FoundryAccountName.services.ai.azure.com/api/projects/$FoundryProjectName"
 }
 
 Write-Host "Repository: $owner/$repoName"

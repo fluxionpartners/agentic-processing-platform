@@ -27,10 +27,64 @@ Foundry supervisor agent
   -> governed Python tool registry and agent workers
 ```
 
+## Foundry Provisioning
+
+Foundry provisioning is available as a separate script so a central AI platform
+team or another department can run it independently of this repository's GitHub
+Actions bootstrap:
+
+```powershell
+.\scripts\foundry\Ensure-FoundryProject.ps1 `
+  -SubscriptionId "<subscription-id>" `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -FoundryAccountName "taxaidevfoundry" `
+  -FoundryProjectName "taxai-dev-project" `
+  -Location eastus `
+  -ModelDeploymentName "gpt-4o-mini-dev"
+```
+
+For a single lower-environment setup, the GitHub bootstrap script can also call
+that provisioning script before configuring GitHub Actions:
+
+```powershell
+.\scripts\github\bootstrap-github-actions.ps1 `
+  -SubscriptionId "<subscription-id>" `
+  -TenantId "<tenant-id>" `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -Environment dev `
+  -Location eastus `
+  -NamePrefix taxai `
+  -ProvisionFoundry `
+  -FoundryAccountName "taxaidevfoundry" `
+  -FoundryProjectName "taxai-dev-project" `
+  -FoundryModelDeploymentName "gpt-4o-mini-dev" `
+  -FoundryOpenApiConnectionName "w2toolsfnkey"
+```
+
+This calls:
+
+```text
+scripts/foundry/Ensure-FoundryProject.ps1
+infrastructure/foundry/bicep/main.bicep
+```
+
+The Foundry Bicep template creates:
+
+- Azure AI Foundry account: `Microsoft.CognitiveServices/accounts`, kind
+  `AIServices`
+- Foundry project:
+  `Microsoft.CognitiveServices/accounts/projects`
+- Optional model deployment:
+  `Microsoft.CognitiveServices/accounts/deployments`
+
+The script can be rerun safely for the same environment. If model deployment is
+centrally managed, pass `-SkipFoundryModelDeployment` to bootstrap and provide
+the existing `-FoundryModelDeploymentName`.
+
 ## Required Environment Values
 
-For each GitHub Environment, set these values through the bootstrap script or
-workflow dispatch inputs:
+For each GitHub Environment, these values are set through the bootstrap script
+or supplied as workflow dispatch inputs:
 
 | Value | Purpose |
 | --- | --- |
@@ -43,9 +97,10 @@ workflow dispatch inputs:
 `FOUNDRY_OPENAPI_CONNECTION_ID` is optional. If supplied, the workflow uses that
 existing connection. If omitted, the workflow creates or updates the connection.
 
-## Bootstrap
+## Bootstrap Without Provisioning
 
-Run this once per environment:
+If your organization already owns the Foundry account/project/model deployment,
+run bootstrap without `-ProvisionFoundry` and pass the existing values:
 
 ```powershell
 .\scripts\github\bootstrap-github-actions.ps1 `

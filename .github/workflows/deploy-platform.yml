@@ -348,6 +348,7 @@ jobs:
     name: Configure Foundry Agent
     runs-on: ubuntu-latest
     needs:
+      - deploy-infrastructure
       - deploy-w2-intake
       - deploy-foundry-tools
       - package-foundry-artifacts
@@ -370,6 +371,24 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Foundry registration inputs
+        shell: pwsh
+        run: |
+          $requiredValues = @{
+            "FOUNDRY_PROJECT_ENDPOINT" = "${{ env.FOUNDRY_PROJECT_ENDPOINT }}"
+            "FOUNDRY_ACCOUNT_NAME" = "${{ env.FOUNDRY_ACCOUNT_NAME }}"
+            "FOUNDRY_PROJECT_NAME" = "${{ env.FOUNDRY_PROJECT_NAME }}"
+            "FOUNDRY_MODEL_DEPLOYMENT_NAME" = "${{ env.FOUNDRY_MODEL_DEPLOYMENT_NAME }}"
+            "foundry_tools_function_app_name" = "${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}"
+            "foundry_tools_endpoint_base_url" = "${{ needs.deploy-infrastructure.outputs.foundry_tools_endpoint_base_url }}"
+          }
+
+          foreach ($entry in $requiredValues.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value)) {
+              throw "Missing required Foundry registration value: $($entry.Key). Verify bootstrap variables and deploy-infrastructure outputs."
+            }
+          }
 
       - name: Create or update Foundry OpenAPI connection
         id: ensure_foundry_connection

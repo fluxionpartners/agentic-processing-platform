@@ -124,10 +124,10 @@ No long-lived Azure secret is required.
   -Environment dev `
   -Location eastus `
   -NamePrefix taxai `
-  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
-  -FoundryAccountName "<foundry-account-name>" `
-  -FoundryProjectName "<foundry-project-name>" `
-  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -ProvisionFoundry `
+  -FoundryAccountName "taxaidevfoundry" `
+  -FoundryProjectName "taxai-dev-project" `
+  -FoundryModelDeploymentName "gpt-4o-mini-dev" `
   -FoundryOpenApiConnectionName "w2toolsfnkey" `
   -GrantUserAccessAdministrator
 ```
@@ -188,6 +188,7 @@ python -m unittest discover -s tests
 python -m compileall src tests
 az bicep build --file infrastructure/services/w2-intake/bicep/main.bicep
 az bicep build --file infrastructure/services/foundry-tools/bicep/main.bicep
+az bicep build --file infrastructure/foundry/bicep/main.bicep
 ```
 
 ## License

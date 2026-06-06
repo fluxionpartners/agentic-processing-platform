@@ -40,10 +40,10 @@ From the repository root:
   -Environment dev `
   -Location eastus `
   -NamePrefix taxai `
-  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
-  -FoundryAccountName "<foundry-account-name>" `
-  -FoundryProjectName "<foundry-project-name>" `
-  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -ProvisionFoundry `
+  -FoundryAccountName "taxaidevfoundry" `
+  -FoundryProjectName "taxai-dev-project" `
+  -FoundryModelDeploymentName "gpt-4o-mini-dev" `
   -FoundryOpenApiConnectionName "w2toolsfnkey" `
   -GrantUserAccessAdministrator
 ```
@@ -71,6 +71,13 @@ The script creates or reuses:
 
 The workflow uses OIDC federation, so no Azure client secret is stored in
 GitHub.
+
+`-ProvisionFoundry` creates or updates the Azure AI Foundry account, Foundry
+project, and model deployment before writing the Foundry values into GitHub
+Environment variables. If your enterprise AI platform team manages Foundry
+centrally, omit `-ProvisionFoundry` and pass the existing
+`-FoundryProjectEndpoint`, `-FoundryAccountName`, `-FoundryProjectName`, and
+`-FoundryModelDeploymentName` values instead.
 
 ## Run The Deployment
 
