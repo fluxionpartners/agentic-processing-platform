@@ -18,7 +18,7 @@
   "paths": {
     "/run-w2-pipeline": {
       "post": {
-        "operationId": "run_w2_pipeline",
+        "operationId": "run_w_two_pipeline",
         "summary": "Run the complete W-2 pipeline.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -26,7 +26,7 @@
     },
     "/start-w2-pipeline": {
       "post": {
-        "operationId": "start_w2_pipeline",
+        "operationId": "start_w_two_pipeline",
         "summary": "Create initial pipeline state.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -34,7 +34,7 @@
     },
     "/process-w2-intake": {
       "post": {
-        "operationId": "process_w2_intake",
+        "operationId": "process_w_two_intake",
         "summary": "Process W-2 intake metadata.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -42,7 +42,7 @@
     },
     "/extract-w2-document": {
       "post": {
-        "operationId": "extract_w2_document",
+        "operationId": "extract_w_two_document",
         "summary": "Extract normalized W-2 facts.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -50,7 +50,7 @@
     },
     "/validate-w2-facts": {
       "post": {
-        "operationId": "validate_w2_facts",
+        "operationId": "validate_w_two_facts",
         "summary": "Validate extracted W-2 facts.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -58,7 +58,7 @@
     },
     "/submit-w2-human-review": {
       "post": {
-        "operationId": "submit_w2_human_review",
+        "operationId": "submit_w_two_human_review",
         "summary": "Route a flagged record to human review.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -66,7 +66,7 @@
     },
     "/map-w2-tax-facts": {
       "post": {
-        "operationId": "map_w2_tax_facts",
+        "operationId": "map_w_two_tax_facts",
         "summary": "Map W-2 facts to tax planning facts.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -74,7 +74,7 @@
     },
     "/generate-form-1040-document": {
       "post": {
-        "operationId": "generate_form_1040_document",
+        "operationId": "generate_form_ten_forty_document",
         "summary": "Generate a draft Form 1040 document artifact.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -82,7 +82,7 @@
     },
     "/evaluate-w2-compliance": {
       "post": {
-        "operationId": "evaluate_w2_compliance",
+        "operationId": "evaluate_w_two_compliance",
         "summary": "Evaluate compliance controls.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -90,7 +90,7 @@
     },
     "/persist-w2-pipeline-checkpoint": {
       "post": {
-        "operationId": "persist_w2_pipeline_checkpoint",
+        "operationId": "persist_w_two_pipeline_checkpoint",
         "summary": "Persist a governed pipeline checkpoint.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
@@ -98,7 +98,7 @@
     },
     "/persist-completed-w2-pipeline": {
       "post": {
-        "operationId": "persist_completed_w2_pipeline",
+        "operationId": "persist_completed_w_two_pipeline",
         "summary": "Persist the completed governed pipeline state.",
         "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}

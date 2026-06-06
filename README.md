@@ -124,6 +124,11 @@ No long-lived Azure secret is required.
   -Environment dev `
   -Location eastus `
   -NamePrefix taxai `
+  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
+  -FoundryAccountName "<foundry-account-name>" `
+  -FoundryProjectName "<foundry-project-name>" `
+  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -FoundryOpenApiConnectionName "w2toolsfnkey" `
   -GrantUserAccessAdministrator
 ```
 
@@ -138,7 +143,8 @@ Detailed setup is in [Deploy Your Own Environment](docs/deploy-your-own.md) and
 
 ## Foundry Integration
 
-The repository includes Foundry-ready artifacts:
+The repository includes Foundry-ready artifacts and an opt-in registration
+stage in GitHub Actions:
 
 - [agent.yaml](src/foundry_agents/agent.yaml)
 - [eval.yaml](src/foundry_agents/eval.yaml)
@@ -146,9 +152,10 @@ The repository includes Foundry-ready artifacts:
 - [tool manifest](src/foundry_agents/tools/w2_pipeline_tools.json)
 - [HTTP OpenAPI binding](src/services/foundry-tools/openapi.json)
 
-Foundry agent registration is intentionally a guarded workflow hook until the
-target Foundry project endpoint, model deployment, tool authentication model,
-and registration command are finalized for the environment. See
+When `deploy_foundry_registration` is selected, the workflow creates or updates
+the Foundry OpenAPI project connection for the deployed tools Function App,
+resolves the OpenAPI server URL, and registers the supervisor agent against the
+configured Foundry project and model deployment. See
 [Foundry Registration Automation](docs/foundry-registration-automation.md).
 
 ## Security And Governance

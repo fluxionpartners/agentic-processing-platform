@@ -60,19 +60,21 @@ class FoundryBindingTests(unittest.TestCase):
             ).exists()
         )
 
-    def test_foundry_tools_openapi_operations_match_registry(self):
+    def test_foundry_tools_openapi_routes_match_registry(self):
         openapi_path = (
             SRC_ROOT / "services" / "foundry-tools" / "openapi.json"
         )
         openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
 
-        operation_ids = {
-            operation["operationId"]
-            for path in openapi["paths"].values()
-            for operation in path.values()
-        }
+        expected_paths = {f"/{tool_name.replace('_', '-')}" for tool_name in TOOL_REGISTRY}
+        operation_ids = []
+        for path in openapi["paths"]:
+            for operation in openapi["paths"][path].values():
+                operation_ids.append(operation["operationId"])
 
-        self.assertEqual(operation_ids, set(TOOL_REGISTRY))
+        self.assertEqual(set(openapi["paths"]), expected_paths)
+        for operation_id in operation_ids:
+            self.assertRegex(operation_id, r"^[A-Za-z_-]+$")
 
 
 if __name__ == "__main__":

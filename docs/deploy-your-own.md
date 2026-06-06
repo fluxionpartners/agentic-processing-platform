@@ -13,9 +13,9 @@ The GitHub Actions workflow deploys two Azure hosts from the same repository:
 | Foundry tools Function App | `src/services/foundry-tools` | Exposes HTTP tools used by the Foundry supervisor agent. |
 
 The workflow also packages the Foundry agent artifacts from
-`src/foundry_agents`. Foundry registration is currently a guarded workflow hook
-because project endpoint, model deployment, tool authentication, and final
-registration command vary by Foundry environment.
+`src/foundry_agents`. When enabled, it also creates or updates the Foundry
+OpenAPI project connection for the deployed tools Function App and registers
+the supervisor agent from the repository artifacts.
 
 ## Prerequisites
 
@@ -40,6 +40,11 @@ From the repository root:
   -Environment dev `
   -Location eastus `
   -NamePrefix taxai `
+  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
+  -FoundryAccountName "<foundry-account-name>" `
+  -FoundryProjectName "<foundry-project-name>" `
+  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -FoundryOpenApiConnectionName "w2toolsfnkey" `
   -GrantUserAccessAdministrator
 ```
 
@@ -58,6 +63,11 @@ The script creates or reuses:
   - `AZURE_RESOURCE_GROUP`
   - `AZURE_LOCATION`
   - `NAME_PREFIX`
+  - `FOUNDRY_PROJECT_ENDPOINT`, when supplied
+  - `FOUNDRY_ACCOUNT_NAME`, when supplied
+  - `FOUNDRY_PROJECT_NAME`, when supplied
+  - `FOUNDRY_MODEL_DEPLOYMENT_NAME`, when supplied
+  - `FOUNDRY_OPENAPI_CONNECTION_NAME`, when supplied
 
 The workflow uses OIDC federation, so no Azure client secret is stored in
 GitHub.
@@ -70,8 +80,9 @@ In GitHub:
 2. Select **Deploy Agentic Processing Platform**.
 3. Choose **Run workflow**.
 4. Select the environment, location, and name prefix.
-5. Leave `deploy_foundry_registration` disabled until your Foundry project
-   registration command is finalized.
+5. Enable `deploy_foundry_registration` when the Foundry project and model
+   deployment exist and the Foundry variables were set by bootstrap or supplied
+   as workflow inputs.
 
 The workflow validates tests and Bicep first, then provisions Azure resources
 and deploys each Function App package.
@@ -108,18 +119,23 @@ file.
 
 ## Foundry Registration
 
-The repository includes all Foundry-facing artifacts, but final registration is
-environment-specific:
+The repository includes all Foundry-facing artifacts and CI/CD automation for
+the current prompt-agent-with-OpenAPI-tools path:
 
 - Foundry project endpoint.
+- Foundry account and project names.
 - Azure OpenAI model deployment name.
-- Tool endpoint base URL.
-- Tool authentication model.
-- Agent naming/versioning convention.
-- Evaluation target.
+- Deployed Foundry tools Function App endpoint.
+- Foundry project connection for the Function key.
+- Agent naming/versioning from `src/foundry_agents/agent.yaml`.
+
+When `deploy_foundry_registration` is selected, the workflow retrieves the
+deployed tools Function key, creates or updates a Foundry project connection
+with a custom key named `x-functions-key`, resolves the OpenAPI spec to the
+deployed `/api` endpoint, and registers the supervisor agent.
 
 See [Foundry Registration Automation](foundry-registration-automation.md) for
-the exact remaining hook and the recommended automation sequence.
+the detailed sequence and scripts.
 
 ## Validate After Deployment
 

@@ -21,6 +21,16 @@ param(
 
     [string]$AppRegistrationName = "",
 
+    [string]$FoundryProjectEndpoint = "",
+
+    [string]$FoundryAccountName = "",
+
+    [string]$FoundryProjectName = "",
+
+    [string]$FoundryModelDeploymentName = "",
+
+    [string]$FoundryOpenApiConnectionName = "w2toolsfnkey",
+
     [switch]$GrantUserAccessAdministrator
 )
 
@@ -273,6 +283,7 @@ az account set --subscription $SubscriptionId
 $requiredResourceProviders = @(
     "Microsoft.ApiManagement",
     "Microsoft.Authorization",
+    "Microsoft.CognitiveServices",
     "Microsoft.DocumentDB",
     "Microsoft.Insights",
     "Microsoft.KeyVault",
@@ -364,9 +375,28 @@ gh variable set AZURE_RESOURCE_GROUP --env $Environment --body $ResourceGroupNam
 gh variable set AZURE_LOCATION --env $Environment --body $Location
 gh variable set NAME_PREFIX --env $Environment --body $NamePrefix
 
+if ($FoundryProjectEndpoint) {
+    gh variable set FOUNDRY_PROJECT_ENDPOINT --env $Environment --body $FoundryProjectEndpoint
+}
+if ($FoundryAccountName) {
+    gh variable set FOUNDRY_ACCOUNT_NAME --env $Environment --body $FoundryAccountName
+}
+if ($FoundryProjectName) {
+    gh variable set FOUNDRY_PROJECT_NAME --env $Environment --body $FoundryProjectName
+}
+if ($FoundryModelDeploymentName) {
+    gh variable set FOUNDRY_MODEL_DEPLOYMENT_NAME --env $Environment --body $FoundryModelDeploymentName
+}
+if ($FoundryOpenApiConnectionName) {
+    gh variable set FOUNDRY_OPENAPI_CONNECTION_NAME --env $Environment --body $FoundryOpenApiConnectionName
+}
+
 Write-Host ""
 Write-Host "GitHub Actions bootstrap complete."
 Write-Host "Configured environment secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID"
 Write-Host "Configured environment variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NAME_PREFIX"
+if ($FoundryProjectEndpoint -or $FoundryAccountName -or $FoundryProjectName -or $FoundryModelDeploymentName -or $FoundryOpenApiConnectionName) {
+    Write-Host "Configured Foundry variables when provided: FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_ACCOUNT_NAME, FOUNDRY_PROJECT_NAME, FOUNDRY_MODEL_DEPLOYMENT_NAME, FOUNDRY_OPENAPI_CONNECTION_NAME"
+}
 Write-Host ""
 Write-Host "Next: run the 'Deploy Agentic Processing Platform' workflow for environment '$Environment'."

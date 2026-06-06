@@ -32,7 +32,42 @@ on:
         default: "taxai"
         type: string
       deploy_foundry_registration:
-        description: "Run Foundry agent registration hook"
+        description: "Register the Foundry supervisor agent"
+        required: true
+        default: false
+        type: boolean
+      foundry_project_endpoint:
+        description: "Foundry project endpoint used when agent registration is enabled"
+        required: false
+        default: ""
+        type: string
+      foundry_account_name:
+        description: "Azure AI Foundry account name used to create the OpenAPI connection"
+        required: false
+        default: ""
+        type: string
+      foundry_project_name:
+        description: "Azure AI Foundry project name used to create the OpenAPI connection"
+        required: false
+        default: ""
+        type: string
+      foundry_model_deployment_name:
+        description: "Foundry model deployment name used by the supervisor agent"
+        required: false
+        default: ""
+        type: string
+      foundry_openapi_connection_id:
+        description: "Optional existing Foundry project connection resource ID for the tool host function key"
+        required: false
+        default: ""
+        type: string
+      foundry_openapi_connection_name:
+        description: "Foundry project connection name to create/update when connection ID is empty"
+        required: false
+        default: "w2toolsfnkey"
+        type: string
+      prepare_foundry_registration_only:
+        description: "Prepare resolved Foundry artifacts without remote registration"
         required: true
         default: false
         type: boolean
@@ -47,6 +82,12 @@ env:
   AZURE_LOCATION: ${{ inputs.location || 'eastus' }}
   AZURE_COSMOS_LOCATION: ${{ inputs.cosmos_location || 'eastus2' }}
   NAME_PREFIX: ${{ inputs.name_prefix || 'taxai' }}
+  FOUNDRY_PROJECT_ENDPOINT: ${{ inputs.foundry_project_endpoint || vars.FOUNDRY_PROJECT_ENDPOINT || '' }}
+  FOUNDRY_ACCOUNT_NAME: ${{ inputs.foundry_account_name || vars.FOUNDRY_ACCOUNT_NAME || '' }}
+  FOUNDRY_PROJECT_NAME: ${{ inputs.foundry_project_name || vars.FOUNDRY_PROJECT_NAME || '' }}
+  FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ inputs.foundry_model_deployment_name || vars.FOUNDRY_MODEL_DEPLOYMENT_NAME || '' }}
+  FOUNDRY_OPENAPI_CONNECTION_ID: ${{ inputs.foundry_openapi_connection_id || vars.FOUNDRY_OPENAPI_CONNECTION_ID || '' }}
+  FOUNDRY_OPENAPI_CONNECTION_NAME: ${{ inputs.foundry_openapi_connection_name || vars.FOUNDRY_OPENAPI_CONNECTION_NAME || 'w2toolsfnkey' }}
 
 jobs:
   validate:
@@ -178,6 +219,7 @@ jobs:
     outputs:
       w2_intake_function_app_name: ${{ steps.deploy_w2_intake.outputs.function_app_name }}
       foundry_tools_function_app_name: ${{ steps.deploy_foundry_tools.outputs.function_app_name }}
+      foundry_tools_endpoint_base_url: ${{ steps.deploy_foundry_tools.outputs.tool_endpoint_base_url }}
 
     steps:
       - name: Checkout
@@ -229,7 +271,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          function_app_name="$(az deployment group create \
+          deployment_output="$(az deployment group create \
             --name "foundry-tools-${{ env.DEPLOY_ENVIRONMENT }}-${{ github.run_number }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infrastructure/services/foundry-tools/bicep/main.bicep \
@@ -237,9 +279,12 @@ jobs:
               namePrefix="${{ env.NAME_PREFIX }}" \
               environment="${{ env.DEPLOY_ENVIRONMENT }}" \
               location="${{ env.AZURE_LOCATION }}" \
-            --query "properties.outputs.functionAppName.value" \
-            --output tsv)"
+            --query "properties.outputs" \
+            --output json)"
+          function_app_name="$(echo "${deployment_output}" | jq -r '.functionAppName.value')"
+          tool_endpoint_base_url="$(echo "${deployment_output}" | jq -r '.toolEndpointBaseUrl.value')"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
+          echo "tool_endpoint_base_url=${tool_endpoint_base_url}" >> "${GITHUB_OUTPUT}"
 
   deploy-w2-intake:
     name: Deploy W2 Intake Function App
@@ -316,6 +361,9 @@ jobs:
           name: foundry-agent-artifacts
           path: artifacts
 
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Azure login
         uses: azure/login@v2
         with:
@@ -323,11 +371,49 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Register Foundry agent hook
+      - name: Create or update Foundry OpenAPI connection
+        id: ensure_foundry_connection
+        if: ${{ env.FOUNDRY_OPENAPI_CONNECTION_ID == '' }}
+        shell: pwsh
         run: |
-          echo "Foundry registration is intentionally a hook."
-          echo "Use agent.yaml, eval.yaml, prompts, and tools manifest from artifacts/foundry-agent-artifacts.zip."
-          echo "Wire this step to Foundry MCP/CLI/SDK once the project endpoint and registration command are finalized."
+          ./scripts/foundry/Ensure-FoundryOpenApiConnection.ps1 `
+            -SubscriptionId "${{ secrets.AZURE_SUBSCRIPTION_ID }}" `
+            -ResourceGroupName "${{ vars.AZURE_RESOURCE_GROUP }}" `
+            -FoundryAccountName "${{ env.FOUNDRY_ACCOUNT_NAME }}" `
+            -FoundryProjectName "${{ env.FOUNDRY_PROJECT_NAME }}" `
+            -ConnectionName "${{ env.FOUNDRY_OPENAPI_CONNECTION_NAME }}" `
+            -FunctionAppName "${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}" `
+            -ToolEndpointBaseUrl "${{ needs.deploy-infrastructure.outputs.foundry_tools_endpoint_base_url }}" `
+            -Environment "${{ env.DEPLOY_ENVIRONMENT }}" `
+            -OutputDirectory "artifacts/foundry-registration"
+
+      - name: Register Foundry supervisor agent
+        shell: pwsh
+        run: |
+          $prepareOnlyArgs = @()
+          if ("${{ inputs.prepare_foundry_registration_only }}" -eq "true") {
+            $prepareOnlyArgs += "-PrepareOnly"
+          }
+          $connectionId = "${{ env.FOUNDRY_OPENAPI_CONNECTION_ID }}"
+          if ([string]::IsNullOrWhiteSpace($connectionId)) {
+            $connectionId = "${{ steps.ensure_foundry_connection.outputs.openapi_project_connection_id }}"
+          }
+
+          ./scripts/foundry/Register-FoundryAgent.ps1 `
+            -ProjectEndpoint "${{ env.FOUNDRY_PROJECT_ENDPOINT }}" `
+            -ModelDeploymentName "${{ env.FOUNDRY_MODEL_DEPLOYMENT_NAME }}" `
+            -ToolEndpointBaseUrl "${{ needs.deploy-infrastructure.outputs.foundry_tools_endpoint_base_url }}" `
+            -OpenApiProjectConnectionId "$connectionId" `
+            -Environment "${{ env.DEPLOY_ENVIRONMENT }}" `
+            -OutputDirectory "artifacts/foundry-registration" `
+            @prepareOnlyArgs
+
+      - name: Upload Foundry registration artifacts
+        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: foundry-registration-artifacts
+          path: artifacts/foundry-registration
 
   smoke-test:
     name: Deployment Smoke Test

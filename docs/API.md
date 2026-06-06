@@ -78,6 +78,10 @@ The logical tool manifest lives at:
 src/foundry_agents/tools/w2_pipeline_tools.json
 ```
 
+The HTTP routes map to internal tool names. The OpenAPI `operationId` values
+use Foundry-compatible names with letters and underscores only, so they do not
+always exactly equal the internal Python registry keys.
+
 ### Tool Response Envelope
 
 Successful tool responses use this envelope:
@@ -194,9 +198,15 @@ Example result:
 
 ## Authentication
 
-The current Function Apps use Azure Functions authentication. In production,
-the recommended pattern is to place these endpoints behind API Management or a
-Foundry-supported authenticated tool binding.
+The current Function Apps use Azure Functions authentication. During Foundry
+registration, GitHub Actions creates or updates a Foundry project connection
+that stores the Foundry tools Function key as a custom key named
+`x-functions-key`. The resolved OpenAPI document includes a matching API key
+security scheme, allowing the Foundry supervisor agent to call the deployed
+tool host without storing the Function key in source control or GitHub secrets.
+
+API Management can still be introduced later as an enterprise ingress boundary
+for external clients or stricter traffic policy.
 
 Runtime access to Azure services uses:
 
@@ -214,4 +224,5 @@ python -m unittest discover -s tests
 python src/foundry_agents/manual_test_harness.py
 ```
 
-The tests verify that OpenAPI operation IDs match the Python tool registry.
+The tests verify that every Python registry tool has a matching HTTP route and
+that OpenAPI operation IDs satisfy Foundry naming constraints.

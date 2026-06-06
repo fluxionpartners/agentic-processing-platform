@@ -59,7 +59,7 @@ flowchart TD
   DeployW2 --> Smoke["Deployment smoke test"]
   DeployTools --> Smoke
   PackageAgent --> FoundryGate{"deploy_foundry_registration == true"}
-  FoundryGate -- "false" --> SkipFoundry["Skip Foundry registration hook"]
+  FoundryGate -- "false" --> SkipFoundry["Skip Foundry registration"]
   FoundryGate -- "true" --> RegisterFoundry["Register Foundry agent artifacts"]
 ```
 
@@ -79,7 +79,12 @@ everything GitHub Actions needs:
   -ResourceGroupName "rg-agentic-tax-dev" `
   -Environment dev `
   -Location eastus `
-  -NamePrefix taxai
+  -NamePrefix taxai `
+  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
+  -FoundryAccountName "<foundry-account-name>" `
+  -FoundryProjectName "<foundry-project-name>" `
+  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -FoundryOpenApiConnectionName "w2toolsfnkey"
 ```
 
 The script uses Azure CLI and GitHub CLI to:
@@ -93,6 +98,7 @@ The script uses Azure CLI and GitHub CLI to:
 - create the GitHub Environment
 - set GitHub environment secrets
 - set GitHub environment variables
+- optionally set Foundry registration variables for that environment
 
 Use `-GrantUserAccessAdministrator` only when the workflow must create Azure RBAC
 role assignments. Keep that permission scoped to the resource group.
@@ -119,6 +125,11 @@ The bootstrap script configures these environment variables:
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_LOCATION`
 - `NAME_PREFIX`
+- `FOUNDRY_PROJECT_ENDPOINT`, when supplied to bootstrap
+- `FOUNDRY_ACCOUNT_NAME`, when supplied to bootstrap
+- `FOUNDRY_PROJECT_NAME`, when supplied to bootstrap
+- `FOUNDRY_MODEL_DEPLOYMENT_NAME`, when supplied to bootstrap
+- `FOUNDRY_OPENAPI_CONNECTION_NAME`, when supplied to bootstrap
 
 The workflow also creates or reuses the configured resource group before
 deploying Bicep.
@@ -203,6 +214,43 @@ The workflow supports `dev`, `test`, `uat`, and `prod` through manual
 The manual dispatch inputs include a platform `location` and a separate
 `cosmos_location` for the Cosmos DB account.
 
+Foundry registration is also manual and opt-in. Select
+`deploy_foundry_registration` only after the Foundry project and model deployment
+exist. The registration step requires:
+
+- `foundry_project_endpoint`: the Foundry project endpoint, for example
+  `https://<resource>.services.ai.azure.com/api/projects/<project>`.
+- `foundry_account_name`: the Azure AI Foundry account resource name.
+- `foundry_project_name`: the Azure AI Foundry project resource name.
+- `foundry_model_deployment_name`: the deployed model name that backs the
+  supervisor agent.
+- `foundry_openapi_connection_name`: the Foundry project connection name to
+  create or update. The default is `w2toolsfnkey`.
+
+The workflow creates or updates the Foundry project connection automatically
+unless `foundry_openapi_connection_id` is supplied. The scripted connection flow:
+
+```text
+Deployed Foundry tools Function App
+  -> read default Function host key using GitHub OIDC identity
+  -> create/update Foundry project connection
+  -> store custom key named x-functions-key
+  -> pass connection resource ID to agent registration
+```
+
+The workflow then resolves `src/services/foundry-tools/openapi.json` to the
+deployed `/api` endpoint, adds the matching OpenAPI security scheme, and
+registers the supervisor agent with an OpenAPI tool definition. The Function key
+is not stored in GitHub secrets, workflow inputs, or source control.
+
+If you already manage the connection outside this workflow, pass
+`foundry_openapi_connection_id` and the create/update step is skipped.
+
+Use `prepare_foundry_registration_only` to generate the resolved OpenAPI spec
+and registration payload as workflow artifacts without calling the Foundry
+registration API. This is useful for review, troubleshooting, and validating the
+exact payload that will be sent to Foundry.
+
 Use GitHub Environments for approval gates and environment-specific secrets or
 variables. A common setup is:
 
@@ -231,12 +279,21 @@ Application Insights component created by the W2 intake infrastructure. Separate
 observability resources should be introduced only for distinct ownership,
 retention, compliance, or scale boundaries.
 
-The workflow still has a guarded hook for:
+The workflow can register:
 
-- Foundry agent registration from `src/foundry_agents/agent.yaml`
+- The Foundry supervisor agent from `src/foundry_agents/agent.yaml`
+- The supervisor prompt from `src/foundry_agents/prompts/supervisor.md`
+- The deployed Foundry tools Function App as an OpenAPI tool
 
-That hook stays inactive until `deploy_foundry_registration` is selected and the
-Foundry project endpoint/registration command is finalized.
+The registration job stays inactive unless `deploy_foundry_registration` is
+selected during manual workflow dispatch.
+
+The Foundry connection automation is implemented in:
+
+```text
+scripts/foundry/Ensure-FoundryOpenApiConnection.ps1
+scripts/foundry/Register-FoundryAgent.ps1
+```
 
 ## Deployed Azure Hosts
 
@@ -267,8 +324,9 @@ POST /api/evaluate-w2-compliance
 ```
 
 `src/services/foundry-tools/openapi.json` documents the HTTP endpoint binding.
-Its `operationId` values match the logical tool names in
-`src/foundry_agents/tools/w2_pipeline_tools.json`.
+Its `operationId` values use Foundry-compatible names with letters and
+underscores only. The HTTP routes still map to the governed Python tool registry
+in `src/foundry_agents/tools/w2_pipeline_tools.json`.
 
 ## Why This Is One Solution And Multiple Hosts
 
@@ -279,7 +337,7 @@ One repo commit
 |-- validates the solution on push
 |-- can deploy W2 intake host by manual dispatch
 |-- can deploy tool host by manual dispatch
-|-- can register Foundry agent when the hook is enabled
+|-- can register Foundry agent when registration is enabled
 `-- keeps all versions traceable together
 ```
 

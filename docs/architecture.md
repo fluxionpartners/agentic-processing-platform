@@ -28,6 +28,7 @@ flowchart TD
     direction TB
     Foundry[Foundry Agent Service]
     Orchestrator[Orchestrator Agent]
+    OpenAPIConnection[Foundry OpenAPI Project Connection]
     ToolHost[Foundry Tools Function App]
     Agents[Agent Set]
     Memory[Foundry Memory]
@@ -68,7 +69,8 @@ flowchart TD
   IntakeSvc -->|Publish ingestion event| EventGrid
   EventGrid -->|Trigger workflow| Orchestrator
   Orchestrator -->|Invoke| Agents
-  Orchestrator -->|HTTP tool calls| ToolHost
+  Orchestrator -->|Authenticated OpenAPI tool calls| OpenAPIConnection
+  OpenAPIConnection -->|x-functions-key| ToolHost
   ToolHost -->|Execute governed Python tools| Agents
   Agents --> Foundry
   Agents -->|Use AI tool| DocInt
@@ -207,6 +209,7 @@ flowchart TD
     KV2["Foundry tools Key Vault"]
     RuntimeRefs["Key Vault app setting references"]
     HostStorage["AzureWebJobsStorage platform setting"]
+    FoundryConnection["Foundry project connection: x-functions-key"]
   end
 
   subgraph DataPlane["Application data plane"]
@@ -227,6 +230,7 @@ flowchart TD
   GitHubSP -->|"Contributor and User Access Administrator scoped to resource group"| RBAC
   GitHubSP -->|"Deploy Bicep and Function packages"| Intake
   GitHubSP -->|"Deploy Bicep and Function packages"| ToolHost
+  GitHubSP -->|"Create/update Foundry project connection"| FoundryConnection
 
   Entra --> APIM
   Entra --> GitHubSP
@@ -245,7 +249,8 @@ flowchart TD
   Intake -->|"Send ingestion event"| Bus
   Bus -->|"Trigger or resume workflow"| Foundry
 
-  Foundry -->|"HTTP tool call"| ToolHost
+  Foundry -->|"OpenAPI tool call"| FoundryConnection
+  FoundryConnection -->|"Inject x-functions-key"| ToolHost
   ToolHost --> Tools
   Tools -->|"Extract fields"| DocIntel
   Tools -->|"Reason and map"| OpenAI

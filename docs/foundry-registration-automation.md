@@ -1,89 +1,137 @@
 # Foundry Registration Automation
 
-The GitHub Actions workflow currently packages Foundry artifacts and includes a
-registration hook. The hook exists because the Foundry project endpoint, model
-deployment, and final tool authentication choices are environment-specific.
+The repository automates the current Foundry registration path for a prompt
+supervisor agent with OpenAPI tools. The registration job is opt-in during
+manual GitHub Actions dispatch so ordinary pushes can validate the public repo
+without requiring Azure or Foundry credentials.
 
-Registration can be automated. The repo already contains most of the inputs:
+## What Gets Registered
+
+The workflow uses these source artifacts:
 
 ```text
 src/foundry_agents/agent.yaml
-src/foundry_agents/prompts/
-src/foundry_agents/tools/w2_pipeline_tools.json
-src/services/foundry-tools/openapi.json
+src/foundry_agents/prompts/supervisor.md
 src/foundry_agents/eval.yaml
 src/foundry_agents/.foundry/
+src/services/foundry-tools/openapi.json
 ```
 
-## What Registration Needs
-
-A fully automated Foundry registration step needs:
-
-- Foundry project endpoint
-- Azure OpenAI model deployment name
-- supervisor agent name/version
-- OpenAPI tool binding URL
-- tool authentication type
-- Foundry service identity or credentials
-- evaluation dataset/suite registration target
-
-## Why It Is A Hook Today
-
-The code and artifacts are ready, but the exact registration command depends on
-which Foundry deployment path we choose:
+The deployed runtime is:
 
 ```text
-Prompt agent with OpenAPI tools
-  Register agent instructions and bind openapi.json to the Foundry tools Function App.
-
-Hosted agent
-  Containerize the agent runtime and deploy it to Foundry hosted agent service.
-
-SDK/CLI registration
-  Use the Foundry SDK, Azure CLI/azd, or REST API from GitHub Actions.
+Foundry supervisor agent
+  -> OpenAPI tool definition
+  -> Foundry project connection with x-functions-key
+  -> Foundry tools Function App /api endpoints
+  -> governed Python tool registry and agent workers
 ```
 
-Microsoft's hosted agent guidance supports deploying containerized agent code
-with `agent.yaml`, and OpenAPI tools can bind an agent to external HTTP APIs
-with anonymous, API key, or managed identity authentication. The exact workflow
-should be selected once the Foundry project and authentication model are known.
+## Required Environment Values
 
-## Automation Sequence
+For each GitHub Environment, set these values through the bootstrap script or
+workflow dispatch inputs:
 
-Once those environment-specific values are available, the workflow hook should
-be replaced with scripted steps:
+| Value | Purpose |
+| --- | --- |
+| `FOUNDRY_PROJECT_ENDPOINT` | Foundry project endpoint, for example `https://<resource>.services.ai.azure.com/api/projects/<project>`. |
+| `FOUNDRY_ACCOUNT_NAME` | Azure AI Foundry account resource name. |
+| `FOUNDRY_PROJECT_NAME` | Azure AI Foundry project resource name. |
+| `FOUNDRY_MODEL_DEPLOYMENT_NAME` | Model deployment used by the supervisor agent. |
+| `FOUNDRY_OPENAPI_CONNECTION_NAME` | Project connection name. Defaults to `w2toolsfnkey`. |
+
+`FOUNDRY_OPENAPI_CONNECTION_ID` is optional. If supplied, the workflow uses that
+existing connection. If omitted, the workflow creates or updates the connection.
+
+## Bootstrap
+
+Run this once per environment:
+
+```powershell
+.\scripts\github\bootstrap-github-actions.ps1 `
+  -SubscriptionId "<subscription-id>" `
+  -TenantId "<tenant-id>" `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -Environment dev `
+  -Location eastus `
+  -NamePrefix taxai `
+  -FoundryProjectEndpoint "https://<foundry-resource>.services.ai.azure.com/api/projects/<project>" `
+  -FoundryAccountName "<foundry-account-name>" `
+  -FoundryProjectName "<foundry-project-name>" `
+  -FoundryModelDeploymentName "<model-deployment-name>" `
+  -FoundryOpenApiConnectionName "w2toolsfnkey"
+```
+
+The bootstrap script configures GitHub OIDC, resource group scoped Azure RBAC,
+provider registration, and the Foundry environment variables.
+
+## Workflow Sequence
+
+When `deploy_foundry_registration` is selected, GitHub Actions performs this
+sequence after infrastructure and Function App deployment:
 
 ```text
-1. Download foundry-agent-artifacts.zip
-2. Resolve Foundry project endpoint
-3. Resolve Foundry tools Function App endpoint
-4. Patch or parameterize openapi.json server URL
-5. Register/update OpenAPI tool binding
-6. Register/update supervisor agent from agent.yaml and prompts
-7. Register/update eval dataset and evaluators
-8. Run smoke eval
-9. Publish agent/eval metadata back to .foundry metadata or workflow summary
+1. Capture the deployed Foundry tools endpoint from Bicep.
+2. Retrieve the deployed tools Function App default host key.
+3. Create or update a Foundry project connection.
+4. Store the key in that connection as custom key x-functions-key.
+5. Resolve openapi.json to the deployed /api endpoint.
+6. Add the OpenAPI apiKey security scheme for x-functions-key.
+7. Build the agent registration payload from agent.yaml and supervisor.md.
+8. Register the supervisor agent through the Foundry project endpoint.
+9. Upload resolved registration artifacts for audit and troubleshooting.
 ```
 
-## Current Status
+The Function key is not stored in source control, GitHub secrets, or workflow
+inputs. It is read by the GitHub OIDC identity at deployment time and stored in
+the Foundry project connection.
 
-Automated now:
+## Scripts
 
-- GitHub Actions bootstrap
-- Azure resource group creation
-- GitHub OIDC identity
-- W2 intake infrastructure
-- Foundry tools infrastructure
-- Function App code deployment
-- Foundry artifact packaging
+```text
+scripts/foundry/Ensure-FoundryOpenApiConnection.ps1
+scripts/foundry/Register-FoundryAgent.ps1
+```
 
-Still a hook:
+`Ensure-FoundryOpenApiConnection.ps1` is idempotent. It creates or updates the
+project connection under:
 
-- Foundry project/model deployment creation
-- supervisor agent registration
-- OpenAPI tool binding registration
-- eval suite registration/execution
+```text
+Microsoft.CognitiveServices/accounts/{account}/projects/{project}/connections/{connection}
+```
 
-The reason is not that it cannot be automated. It can. The reason is that the
-project endpoint, chosen Foundry registration method, and tool authentication
-model need to be finalized first.
+`Register-FoundryAgent.ps1` prepares the resolved OpenAPI document and
+registration payload, then calls the Foundry agent REST endpoint. Use
+`prepare_foundry_registration_only` in the workflow to generate the artifacts
+without making the remote registration call.
+
+## OpenAPI Naming
+
+Foundry OpenAPI tool operation IDs must use supported characters. The HTTP
+routes still use the business tool names, such as `/api/run-w2-pipeline`, while
+`operationId` values use Foundry-compatible names such as
+`run_w_two_pipeline`.
+
+The binding test verifies that every Python registry tool has a matching HTTP
+route and that the OpenAPI operation IDs satisfy the Foundry naming rule.
+
+## Current Scope
+
+Automated:
+
+- GitHub OIDC bootstrap and environment variables.
+- Azure infrastructure and Function App deployment.
+- Foundry tools Function App endpoint capture.
+- Foundry project connection creation/update for Function-key auth.
+- Supervisor prompt agent registration with OpenAPI tool binding.
+- Resolved registration artifact upload.
+
+Not yet automated:
+
+- Creating the Foundry account/project itself.
+- Deploying the model into the Foundry project.
+- Registering/running Foundry evaluation suites.
+
+Those are separate lifecycle steps because many teams manage Foundry projects
+and model deployments centrally. The workflow is ready to consume those
+environment-specific values once they exist.

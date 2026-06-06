@@ -35,7 +35,10 @@ flowchart TB
   Azure --> Intake[W2 Intake Function]
   Azure --> Tools[Foundry Tools Function]
   Actions --> FoundryArtifacts[Foundry Agent Artifacts]
-  FoundryArtifacts --> FoundryHook[Foundry Registration Hook]
+  Tools --> Connection[Foundry OpenAPI Project Connection]
+  FoundryArtifacts --> Registration[Foundry Supervisor Registration]
+  Connection --> Registration
+  Registration --> Agent[Foundry Supervisor Agent]
 ```
 
 ## Key Outcomes
@@ -48,6 +51,7 @@ flowchart TB
 - Generate draft Form 1040 artifacts.
 - Persist governed checkpoints in Cosmos DB.
 - Deploy Azure hosts through GitHub Actions.
+- Register the Foundry supervisor agent with the deployed OpenAPI tool host.
 
 ## Documentation
 

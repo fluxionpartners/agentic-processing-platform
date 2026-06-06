@@ -13,7 +13,7 @@ binding documentation for the Microsoft Foundry Tax Intelligence Platform.
 | [Architecture](architecture.md) | Logical architecture, security boundaries, and component responsibilities. |
 | [Foundry Tool Execution Flow](foundry-tool-execution-flow.md) | How Foundry tool calls reach the Python workers. |
 | [Agent-To-Agent vs Supervisor-With-Tools](agent-to-agent-vs-tools.md) | Why the current regulated pipeline uses tools and where A2A fits. |
-| [Foundry Registration Automation](foundry-registration-automation.md) | What remains to automate in Foundry agent registration. |
+| [Foundry Registration Automation](foundry-registration-automation.md) | How GitHub Actions creates the Foundry connection and registers the supervisor agent. |
 
 ## Implementation Guides
 
@@ -41,7 +41,7 @@ binding documentation for the Microsoft Foundry Tax Intelligence Platform.
 | Form 1040 generation | Implemented | Draft HTML artifact generation with local file or Blob storage. |
 | Compliance | Implemented | Governance checks and audit envelope. |
 | Tax fact persistence | Implemented | Local JSON and Cosmos DB checkpoint stores. |
-| Foundry registration | Hooked | Registration artifacts exist; final environment-specific command remains a guarded hook. |
+| Foundry registration | Implemented | Opt-in GitHub Actions stage creates/updates the OpenAPI project connection and registers the supervisor agent. |
 
 ## Agent Sequence
 

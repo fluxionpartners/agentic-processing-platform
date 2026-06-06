@@ -9,6 +9,7 @@ the regulated business operations.
 ```text
 Foundry supervisor agent
   -> OpenAPI tool binding
+  -> Foundry project connection for x-functions-key
   -> Foundry Tools Azure Function endpoint
   -> foundry_tools_app.ROUTE_TO_TOOL
   -> foundry_agents.tools.w2_pipeline_tools.TOOL_REGISTRY
@@ -51,7 +52,13 @@ PII controls before final persistence.
 - `src/foundry_agents/agent.yaml` defines the supervisor and runtime settings.
 - `src/foundry_agents/prompts/supervisor.md` instructs the tool sequence.
 - `src/foundry_agents/tools/w2_pipeline_tools.json` defines logical tool schemas.
-- `src/services/foundry-tools/openapi.json` exposes HTTP operation IDs.
+- `src/services/foundry-tools/openapi.json` exposes HTTP routes and
+  Foundry-compatible operation IDs.
 - `src/services/foundry-tools/function_app.py` defines Azure Functions routes.
 - `src/services/foundry-tools/foundry_tools_app.py` maps routes to registry keys.
 - `src/foundry_agents/tools/w2_pipeline_tools.py` calls the Python agent workers.
+
+The OpenAPI `operationId` values intentionally use names such as
+`run_w_two_pipeline` because Foundry restricts operation IDs to supported
+characters. The HTTP route and `foundry_tools_app.ROUTE_TO_TOOL` mapping keep
+the backend bound to the internal registry key, such as `run_w2_pipeline`.
