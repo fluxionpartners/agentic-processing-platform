@@ -74,7 +74,7 @@ var appInsightsName = toLower('${namePrefix}${environment}toolsai')
 var storageConnectionStringSecretName = 'foundry-tools-storage-connection-string'
 var form1040ArtifactMode = 'azure-blob'
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2024-06-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
   location: location
   sku: {
@@ -106,7 +106,7 @@ resource form1040ArtifactContainer 'Microsoft.Storage/storageAccounts/blobServic
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2024-07-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
   properties: {
@@ -123,7 +123,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-07-01' = {
   }
 }
 
-resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-07-01' = {
+resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: storageConnectionStringSecretName
   properties: {
@@ -131,7 +131,7 @@ resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-0
   }
 }
 
-resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2024-10-01' = {
+resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logWorkspaceName
   location: location
   properties: {
@@ -151,7 +151,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-10-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: appServicePlanName
   location: location
   sku: {
@@ -168,7 +168,7 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' existi
   name: cosmosAccountName
 }
 
-resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
+resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp,linux'
@@ -297,7 +297,7 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
   }
 }
 
-resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2024-07-01' = {
+resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = {
   parent: keyVault
   name: 'add'
   properties: {

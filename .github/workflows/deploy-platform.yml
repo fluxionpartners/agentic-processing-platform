@@ -190,6 +190,15 @@ jobs:
             --name "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --location "${{ env.AZURE_LOCATION }}"
 
+      - name: Preflight Azure infrastructure
+        shell: pwsh
+        run: |
+          ./scripts/azure/Test-AzureDeploymentPreflight.ps1 `
+            -ResourceGroupName "${{ vars.AZURE_RESOURCE_GROUP }}" `
+            -Environment "${{ env.DEPLOY_ENVIRONMENT }}" `
+            -Location "${{ env.AZURE_LOCATION }}" `
+            -NamePrefix "${{ env.NAME_PREFIX }}"
+
       - name: Deploy W2 intake infrastructure
         id: deploy_w2_intake
         shell: bash

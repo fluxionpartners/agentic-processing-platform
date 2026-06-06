@@ -79,6 +79,30 @@ The bootstrap script configures these environment variables:
 The workflow also creates or reuses the configured resource group before
 deploying Bicep.
 
+## Azure Preflight
+
+Before creating or updating resources, the workflow runs the same preflight you
+can run locally:
+
+```powershell
+.\scripts\azure\Test-AzureDeploymentPreflight.ps1 `
+  -ResourceGroupName "rg-agentic-tax-dev" `
+  -Environment dev `
+  -Location eastus `
+  -NamePrefix taxai
+```
+
+The preflight compiles the deployable Bicep templates and runs ARM `what-if` for
+the W2 intake host and Foundry tools host. This catches unsupported API versions,
+provider registration issues, resource name/location conflicts, and subscription
+quota problems before the workflow starts provisioning.
+
+If preflight reports `SubscriptionIsOverQuotaForSku` for
+`Microsoft.Web/serverFarms`, the Bicep is valid but the subscription does not
+currently have enough App Service/Functions quota in that region. Resolve that
+by requesting quota for the selected region or dispatching the workflow with a
+region where the subscription has available quota.
+
 ## Secret Management
 
 The W2 intake Bicep creates Azure Key Vault and stores connection-string secrets

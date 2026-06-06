@@ -34,6 +34,18 @@ function Require-Command {
     }
 }
 
+function Assert-GuidValue {
+    param(
+        [string]$Name,
+        [string]$Value
+    )
+
+    $parsed = [Guid]::Empty
+    if (-not [Guid]::TryParse($Value, [ref]$parsed)) {
+        throw "$Name must be an Azure GUID value. Received '$Value'. Run 'az account show --query `"{subscriptionId:id, tenantId:tenantId}`" -o table' and pass the real value."
+    }
+}
+
 function Get-RepoContext {
     if ($GitHubOwner -and $GitHubRepo) {
         return @{
@@ -76,8 +88,162 @@ function Ensure-RoleAssignment {
     Write-Host "Created role assignment: $RoleName"
 }
 
+function Get-ServicePrincipalObjectId {
+    param([string]$ApplicationId)
+
+    return az ad sp list `
+        --filter "appId eq '$ApplicationId'" `
+        --query "[0].id" `
+        --output tsv
+}
+
+function Ensure-ServicePrincipal {
+    param([string]$ApplicationId)
+
+    $objectId = Get-ServicePrincipalObjectId -ApplicationId $ApplicationId
+    if ($objectId) {
+        Write-Host "Using existing service principal: $objectId"
+        return $objectId
+    }
+
+    Write-Host "Creating service principal for app registration: $ApplicationId"
+    az ad sp create --id $ApplicationId --only-show-errors | Out-Null
+
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $objectId = Get-ServicePrincipalObjectId -ApplicationId $ApplicationId
+        if ($objectId) {
+            Write-Host "Created service principal: $objectId"
+            return $objectId
+        }
+        Write-Host "Waiting for service principal propagation ($attempt/12)..."
+        Start-Sleep -Seconds 5
+    }
+
+    throw "Service principal for app registration '$ApplicationId' was not visible after waiting."
+}
+
+function New-FederatedCredentialFile {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Subject,
+        [string]$Description
+    )
+
+    @{
+        name = $Name
+        issuer = "https://token.actions.githubusercontent.com"
+        subject = $Subject
+        audiences = @("api://AzureADTokenExchange")
+        description = $Description
+    } | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Encoding utf8
+}
+
+function Test-FederatedCredentialMatches {
+    param(
+        [object]$Credential,
+        [string]$ExpectedSubject
+    )
+
+    if (-not $Credential) {
+        return $false
+    }
+    if (($Credential.issuer | Out-String).Trim() -ne "https://token.actions.githubusercontent.com") {
+        return $false
+    }
+    if (($Credential.subject | Out-String).Trim() -ne $ExpectedSubject) {
+        return $false
+    }
+    $audiences = @($Credential.audiences)
+    if (-not $audiences -or $audiences -notcontains "api://AzureADTokenExchange") {
+        return $false
+    }
+    return $true
+}
+
+function Write-FederatedCredentialDetails {
+    param(
+        [string]$Label,
+        [object]$Credential
+    )
+
+    if (-not $Credential) {
+        Write-Host "${Label}: <none>"
+        return
+    }
+
+    Write-Host "${Label}:"
+    Write-Host "  name: $($Credential.name)"
+    Write-Host "  issuer: $($Credential.issuer)"
+    Write-Host "  subject: $($Credential.subject)"
+    Write-Host "  audiences: $(@($Credential.audiences) -join ', ')"
+}
+
+function Ensure-FederatedCredential {
+    param(
+        [string]$ApplicationId,
+        [string]$CredentialName,
+        [string]$Subject,
+        [string]$Description
+    )
+
+    $credentials = az ad app federated-credential list `
+        --id $ApplicationId `
+        --output json | ConvertFrom-Json
+
+    $existing = $credentials | Where-Object { $_.name -eq $CredentialName } | Select-Object -First 1
+    if (Test-FederatedCredentialMatches -Credential $existing -ExpectedSubject $Subject) {
+        Write-Host "Federated credential already matches expected GitHub subject: $CredentialName"
+        Write-FederatedCredentialDetails -Label "Federated credential" -Credential $existing
+        return
+    }
+
+    if ($existing) {
+        Write-Host "Federated credential exists but does not match expected OIDC settings. Recreating: $CredentialName"
+        Write-FederatedCredentialDetails -Label "Existing federated credential" -Credential $existing
+        Write-Host "Expected subject: $Subject"
+        az ad app federated-credential delete `
+            --id $ApplicationId `
+            --federated-credential-id $existing.id `
+            --only-show-errors
+    }
+
+    $credentialPath = Join-Path $env:TEMP "$CredentialName.json"
+    New-FederatedCredentialFile `
+        -Path $credentialPath `
+        -Name $CredentialName `
+        -Subject $Subject `
+        -Description $Description
+
+    az ad app federated-credential create `
+        --id $ApplicationId `
+        --parameters "@$credentialPath" `
+        --only-show-errors | Out-Null
+    Remove-Item -Path $credentialPath -Force
+
+    $created = az ad app federated-credential list `
+        --id $ApplicationId `
+        --output json | ConvertFrom-Json |
+        Where-Object { $_.name -eq $CredentialName } |
+        Select-Object -First 1
+
+    if (-not (Test-FederatedCredentialMatches -Credential $created -ExpectedSubject $Subject)) {
+        Write-FederatedCredentialDetails -Label "Created federated credential" -Credential $created
+        Write-Host "Expected issuer: https://token.actions.githubusercontent.com"
+        Write-Host "Expected subject: $Subject"
+        Write-Host "Expected audience: api://AzureADTokenExchange"
+        throw "Federated credential '$CredentialName' was created but does not match the expected GitHub OIDC settings."
+    }
+
+    Write-Host "Created federated credential: $CredentialName"
+    Write-FederatedCredentialDetails -Label "Federated credential" -Credential $created
+}
+
 Require-Command az
 Require-Command gh
+
+Assert-GuidValue -Name "SubscriptionId" -Value $SubscriptionId
+Assert-GuidValue -Name "TenantId" -Value $TenantId
 
 az account set --subscription $SubscriptionId
 
@@ -123,48 +289,18 @@ if (-not $appId) {
     Write-Host "Using existing app registration: $appId"
 }
 
-$servicePrincipalObjectId = az ad sp show `
-    --id $appId `
-    --query id `
-    --output tsv 2>$null
-
-if (-not $servicePrincipalObjectId) {
-    $servicePrincipalObjectId = az ad sp create `
-        --id $appId `
-        --query id `
-        --output tsv
-    Write-Host "Created service principal: $servicePrincipalObjectId"
-} else {
-    Write-Host "Using existing service principal: $servicePrincipalObjectId"
-}
+$servicePrincipalObjectId = Ensure-ServicePrincipal -ApplicationId $appId
 
 $federatedCredentialName = "github-$owner-$repoName-$Environment".ToLower() -replace "[^a-z0-9-]", "-"
-$subject = "repo:$owner/$repoName:environment:$Environment"
+$subject = "repo:${owner}/${repoName}:environment:${Environment}"
+$federatedCredentialDescription = "GitHub Actions OIDC for $owner/$repoName environment $Environment"
 
-$existingFederatedCredential = az ad app federated-credential list `
-    --id $appId `
-    --query "[?name=='$federatedCredentialName'].name | [0]" `
-    --output tsv
-
-if (-not $existingFederatedCredential) {
-    $credentialPath = Join-Path $env:TEMP "$federatedCredentialName.json"
-    @{
-        name = $federatedCredentialName
-        issuer = "https://token.actions.githubusercontent.com"
-        subject = $subject
-        audiences = @("api://AzureADTokenExchange")
-        description = "GitHub Actions OIDC for $owner/$repoName environment $Environment"
-    } | ConvertTo-Json -Depth 5 | Set-Content -Path $credentialPath -Encoding utf8
-
-    az ad app federated-credential create `
-        --id $appId `
-        --parameters "@$credentialPath" `
-        --only-show-errors | Out-Null
-    Remove-Item -Path $credentialPath -Force
-    Write-Host "Created federated credential: $federatedCredentialName"
-} else {
-    Write-Host "Federated credential already exists: $federatedCredentialName"
-}
+Write-Host "GitHub OIDC subject: $subject"
+Ensure-FederatedCredential `
+    -ApplicationId $appId `
+    -CredentialName $federatedCredentialName `
+    -Subject $subject `
+    -Description $federatedCredentialDescription
 
 Ensure-RoleAssignment `
     -Assignee $appId `

@@ -17,7 +17,7 @@ var serviceBusQueueName = 'w2-ingestion-queue'
 var apiManagementPublisherName = 'TaxAI Publisher'
 var apiManagementPublisherEmail = 'audit@contoso.com'
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2024-06-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
   location: location
   sku: {
@@ -42,12 +42,12 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-06-01' = {
   }
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2024-06-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01' = {
   parent: storageAccount
   name: 'default'
 }
 
-resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-06-01' = {
+resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01' = {
   parent: blobService
   name: containerName
   properties: {
@@ -55,7 +55,7 @@ resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/container
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2024-07-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
   properties: {
@@ -72,7 +72,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-07-01' = {
   }
 }
 
-resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2024-10-01' = {
+resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logWorkspaceName
   location: location
   properties: {
@@ -93,7 +93,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   dependsOn: [logWorkspace]
 }
 
-resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-11-01' = {
+resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: serviceBusName
   location: location
   sku: {
@@ -105,7 +105,7 @@ resource serviceBus 'Microsoft.ServiceBus/namespaces@2024-11-01' = {
   }
 }
 
-resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2024-11-01' = {
+resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = {
   parent: serviceBus
   name: serviceBusQueueName
   properties: {
@@ -117,7 +117,7 @@ resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2024-11-01' = {
   dependsOn: [serviceBus]
 }
 
-resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-11-01' = {
+resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/authorizationRules@2024-01-01' = {
   parent: serviceBus
   name: 'RootManageSharedAccessKey'
   properties: {
@@ -130,7 +130,7 @@ resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/authorizationRules@
   dependsOn: [serviceBus]
 }
 
-resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-07-01' = {
+resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'w2-storage-connection-string'
   properties: {
@@ -139,7 +139,7 @@ resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-0
   dependsOn: [storageAccount]
 }
 
-resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-07-01' = {
+resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'w2-servicebus-connection-string'
   properties: {
@@ -148,7 +148,7 @@ resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@202
   dependsOn: [serviceBusAuthRule]
 }
 
-resource apiManagement 'Microsoft.ApiManagement/service@2024-06-01-preview' = {
+resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   name: apiMgmtName
   location: location
   sku: {
@@ -161,7 +161,7 @@ resource apiManagement 'Microsoft.ApiManagement/service@2024-06-01-preview' = {
   }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-10-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: appServicePlanName
   location: location
   sku: {
@@ -174,7 +174,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-10-01' = {
   }
 }
 
-resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
+resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp,linux'
@@ -250,7 +250,7 @@ resource functionApp 'Microsoft.Web/sites@2023-10-01' = {
   ]
 }
 
-resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2024-07-01' = {
+resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = {
   parent: keyVault
   name: 'add'
   properties: {
