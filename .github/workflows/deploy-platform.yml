@@ -627,8 +627,12 @@ jobs:
 
           $bearerToken = ""
           if ("${{ env.PORTAL_AUTH_ENABLED }}" -eq "true") {
+            $smokeTokenScope = "${{ env.PORTAL_AUTH_AUDIENCE }}/.default"
+            if ([string]::IsNullOrWhiteSpace("${{ env.PORTAL_AUTH_AUDIENCE }}")) {
+              throw "PORTAL_AUTH_ENABLED is true, but PORTAL_AUTH_AUDIENCE is empty. Rerun bootstrap with -EnableUploadPortalAuthentication."
+            }
             $bearerToken = az account get-access-token `
-              --resource "${{ env.PORTAL_AUTH_AUDIENCE }}" `
+              --scope $smokeTokenScope `
               --query accessToken `
               --output tsv
           }
