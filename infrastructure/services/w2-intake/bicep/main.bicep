@@ -31,7 +31,9 @@ var apiManagementPublisherName = 'TaxAI Publisher'
 var apiManagementPublisherEmail = 'audit@contoso.com'
 var portalWebEndpoint = portalStorageAccount.properties.primaryEndpoints.web
 var portalWebOrigin = endsWith(portalWebEndpoint, '/') ? substring(portalWebEndpoint, 0, length(portalWebEndpoint) - 1) : portalWebEndpoint
-var portalJwtPolicy = portalAuthEnabled ? '<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. A valid Entra access token is required."><openid-config url="${az.environment().authentication.loginEndpoint}${portalAuthTenantId}/v2.0/.well-known/openid-configuration" /><audiences><audience>${portalAuthAudience}</audience></audiences></validate-jwt>' : ''
+var portalAuthClientIdAudience = replace(portalAuthAudience, 'api://', '')
+var portalJwtAudiences = portalAuthAudience == portalAuthClientIdAudience ? '<audience>${portalAuthAudience}</audience>' : '<audience>${portalAuthAudience}</audience><audience>${portalAuthClientIdAudience}</audience>'
+var portalJwtPolicy = portalAuthEnabled ? '<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. A valid Entra access token is required."><openid-config url="${az.environment().authentication.loginEndpoint}${portalAuthTenantId}/v2.0/.well-known/openid-configuration" /><audiences>${portalJwtAudiences}</audiences></validate-jwt>' : ''
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName

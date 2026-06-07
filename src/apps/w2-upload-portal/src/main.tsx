@@ -397,7 +397,7 @@ function App() {
             {status === "processing" ? "Running Pipeline" : "Submit to Intake"}
           </button>
 
-          {(!intakeApiUrl || !processingApiUrl) && (
+          {(!intakeApiUrl || !statusApiUrl) && (
             <p className="warning">
               <AlertCircle size={16} />
               Configure intake and status API URLs before submitting to Azure.
