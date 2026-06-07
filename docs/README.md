@@ -34,7 +34,7 @@ binding documentation for the Agentic Processing Platform.
 | --- | --- | --- |
 | W-2 intake | Implemented | Azure Function, Blob Storage, Service Bus eventing, Key Vault settings. |
 | W-2 upload portal | Implemented | React static app deployed to Azure Storage and fronted by API Management. |
-| API Management facade | Implemented | APIM route injects backend Function key server-side and applies CORS/rate limiting. |
+| API Management facade | Implemented | APIM route injects backend Function key server-side and applies CORS/JWT policies; gateway rate limiting requires an APIM SKU that supports it. |
 | Foundry tools host | Implemented | Azure Function exposing HTTP tools for Foundry binding. |
 | Agent pipeline | Implemented | Local and deployable supervisor-worker orchestration. |
 | W-2 extraction | Implemented | Local deterministic mode and Azure Document Intelligence adapter. |

@@ -114,7 +114,9 @@ flowchart TD
 - Expose secure ingress for W-2 uploads and pipeline status APIs.
 - Store the backend Function key as an APIM secret named value and inject it server-side.
 - Route ingestion payloads to Azure Functions and Event Grid.
-- Apply CORS, throttling, request validation, and future DLP policies.
+- Apply CORS, request validation, and future DLP policies. Gateway throttling
+  can be enabled when APIM is deployed on a SKU that supports rate-limit
+  policies.
 - Add Entra ID JWT validation when tenant-specific application registration values are available.
 
 ### Azure Storage

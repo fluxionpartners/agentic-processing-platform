@@ -222,7 +222,7 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 }
 
 $uri = "$($ProjectEndpoint.TrimEnd('/'))/assistants?api-version=$ApiVersion"
-Write-Host "Registering Foundry agent with: $uri"
+Write-Host "Registering Foundry supervisor agent."
 
 $response = az rest `
     --method post `

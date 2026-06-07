@@ -304,9 +304,11 @@ The W2 intake infrastructure configures:
 - API Management Consumption SKU.
 - `POST /w2-intake/upload-w2` APIM operation.
 - APIM CORS policy for the deployed portal origin and local development.
-- APIM per-IP rate limiting for upload traffic.
 - APIM secret named value containing the backend Function key.
 - Optional APIM JWT validation for the Entra-protected upload portal.
+- APIM gateway-level rate limiting is intentionally not enabled on the
+  Consumption SKU because `rate-limit-by-key` is not supported there. Use a
+  higher APIM SKU before enabling those policies.
 
 The Foundry tools infrastructure also provisions the Blob container used for
 draft Form 1040 artifacts, configures the tools Function App for Blob-backed

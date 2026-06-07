@@ -37,7 +37,7 @@ if ($ToolEndpointBaseUrl.EndsWith("/")) {
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
-Write-Host "Retrieving host key for Foundry tools Function App: $FunctionAppName"
+Write-Host "Retrieving Foundry tools Function App host key."
 $functionKey = az functionapp keys list `
     --resource-group $ResourceGroupName `
     --name $FunctionAppName `
@@ -78,7 +78,7 @@ $summaryPath = Join-Path $OutputDirectory "foundry-openapi-connection-summary.js
 
 $requestBody | ConvertTo-Json -Depth 20 | Set-Content -Path $bodyPath -Encoding utf8
 
-Write-Host "Creating or updating Foundry OpenAPI project connection: $ConnectionName"
+Write-Host "Creating or updating Foundry OpenAPI project connection."
 $response = az rest `
     --method put `
     --uri $connectionUri `
@@ -103,5 +103,4 @@ if ($env:GITHUB_OUTPUT) {
     "openapi_project_connection_id=$connectionResourceId" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 }
 
-Write-Host "Foundry OpenAPI project connection is ready:"
-Write-Host "  $connectionResourceId"
+Write-Host "Foundry OpenAPI project connection is ready."

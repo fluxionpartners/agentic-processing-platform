@@ -30,7 +30,6 @@ Implemented controls:
 - Function key is not stored in source control or frontend JavaScript.
 - APIM stores backend Function keys as secret named values.
 - APIM applies CORS only for the deployed portal origin and local dev origin.
-- APIM applies per-IP rate limits to upload and status operations.
 - APIM can enforce Entra ID JWT validation when portal authentication is
   enabled through bootstrap.
 - Storage static website hosting is enabled, while general blob public access
@@ -41,6 +40,8 @@ Production hardening options:
 
 - Add custom domains and Conditional Access policies for production tenants.
 - Add malware scanning and content-type validation before document persistence.
+- Move APIM to a SKU that supports rate-limit policies when gateway-level
+  throttling is required.
 
 ## Portal App Registration
 

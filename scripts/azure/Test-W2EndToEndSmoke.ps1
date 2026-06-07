@@ -74,8 +74,6 @@ if (-not [string]::IsNullOrWhiteSpace($BearerToken)) {
 
 Write-Host "Starting W-2 end-to-end smoke test"
 Write-Host "Correlation ID: $correlationId"
-Write-Host "Intake API: $IntakeApiUrl"
-Write-Host "Status API: $StatusApiUrl"
 
 $intakePayload = @{
     correlationId = $correlationId
@@ -123,7 +121,7 @@ while ([DateTimeOffset]::UtcNow -lt $deadline) {
         }
 
         Write-Host "Smoke test completed successfully."
-        Write-Host "Form 1040 artifact: $($artifact.artifactId)"
+        Write-Host "Form 1040 artifact metadata was returned."
         return
     }
 

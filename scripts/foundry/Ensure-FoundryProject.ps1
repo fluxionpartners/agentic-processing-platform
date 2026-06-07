@@ -126,8 +126,6 @@ $summary | ConvertTo-Json -Depth 20 | Set-Content -Path $summaryPath -Encoding u
 
 Write-Host ""
 Write-Host "Foundry bootstrap complete."
-Write-Host "  FOUNDRY_PROJECT_ENDPOINT: $($summary.foundryProjectEndpoint)"
-Write-Host "  FOUNDRY_ACCOUNT_NAME: $($summary.foundryAccountName)"
-Write-Host "  FOUNDRY_PROJECT_NAME: $($summary.foundryProjectName)"
-Write-Host "  FOUNDRY_MODEL_DEPLOYMENT_NAME: $($summary.foundryModelDeploymentName)"
+Write-Host "  Foundry project endpoint captured for GitHub Actions variables."
+Write-Host "  Foundry account/project/model values captured for GitHub Actions variables."
 Write-Host "Summary written to: $summaryPath"

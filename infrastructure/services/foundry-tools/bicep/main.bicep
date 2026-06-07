@@ -471,7 +471,7 @@ resource runW2PipelineOperationPolicy 'Microsoft.ApiManagement/service/apis/oper
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins>${apimCorsOrigins}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<rate-limit-by-key calls="30" renewal-period="60" counter-key="@(context.Request.IpAddress)" /><set-header name="x-functions-key" exists-action="override"><value>{{foundry-tools-function-key}}</value></set-header><rewrite-uri template="/run-w2-pipeline" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins>${apimCorsOrigins}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<set-header name="x-functions-key" exists-action="override"><value>{{foundry-tools-function-key}}</value></set-header><rewrite-uri template="/run-w2-pipeline" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -521,7 +521,7 @@ resource getW2PipelineStatusOperationPolicy 'Microsoft.ApiManagement/service/api
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins>${apimCorsOrigins}</allowed-origins><allowed-methods><method>GET</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<rate-limit-by-key calls="120" renewal-period="60" counter-key="@(context.Request.IpAddress)" /><set-header name="x-functions-key" exists-action="override"><value>{{foundry-tools-function-key}}</value></set-header><rewrite-uri template="/status/{correlationId}" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins>${apimCorsOrigins}</allowed-origins><allowed-methods><method>GET</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<set-header name="x-functions-key" exists-action="override"><value>{{foundry-tools-function-key}}</value></set-header><rewrite-uri template="/status/{correlationId}" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 

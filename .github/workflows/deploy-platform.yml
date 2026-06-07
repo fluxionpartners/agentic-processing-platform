@@ -260,6 +260,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Mask deployment identifiers
+        shell: bash
+        run: |
+          echo "::add-mask::${{ vars.AZURE_RESOURCE_GROUP }}"
+          echo "::add-mask::${{ env.NAME_PREFIX }}"
+          echo "::add-mask::${{ env.FOUNDRY_PROJECT_ENDPOINT }}"
+          echo "::add-mask::${{ env.FOUNDRY_ACCOUNT_NAME }}"
+          echo "::add-mask::${{ env.FOUNDRY_PROJECT_NAME }}"
+
       - name: Ensure resource group exists
         run: |
           az group create \
@@ -302,6 +311,12 @@ jobs:
           portal_web_endpoint="$(echo "${deployment_output}" | jq -r '.portalWebEndpoint.value')"
           service_bus_name="$(echo "${deployment_output}" | jq -r '.serviceBusName.value')"
           service_bus_queue_name="$(echo "${deployment_output}" | jq -r '.serviceBusQueueName.value')"
+          echo "::add-mask::${function_app_name}"
+          echo "::add-mask::${w2_intake_api_url}"
+          echo "::add-mask::${api_management_name}"
+          echo "::add-mask::${portal_storage_account_name}"
+          echo "::add-mask::${portal_web_endpoint}"
+          echo "::add-mask::${service_bus_name}"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
           echo "w2_intake_api_url=${w2_intake_api_url}" >> "${GITHUB_OUTPUT}"
           echo "api_management_name=${api_management_name}" >> "${GITHUB_OUTPUT}"
@@ -336,6 +351,10 @@ jobs:
           tool_endpoint_base_url="$(echo "${deployment_output}" | jq -r '.toolEndpointBaseUrl.value')"
           w2_processing_api_url="$(echo "${deployment_output}" | jq -r '.w2ProcessingApiUrl.value')"
           w2_pipeline_status_api_url="$(echo "${deployment_output}" | jq -r '.w2PipelineStatusApiUrl.value')"
+          echo "::add-mask::${function_app_name}"
+          echo "::add-mask::${tool_endpoint_base_url}"
+          echo "::add-mask::${w2_processing_api_url}"
+          echo "::add-mask::${w2_pipeline_status_api_url}"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
           echo "tool_endpoint_base_url=${tool_endpoint_base_url}" >> "${GITHUB_OUTPUT}"
           echo "w2_processing_api_url=${w2_processing_api_url}" >> "${GITHUB_OUTPUT}"
@@ -466,7 +485,7 @@ jobs:
             --overwrite \
             --auth-mode key \
             --only-show-errors
-          echo "Portal URL: ${{ needs.deploy-infrastructure.outputs.portal_web_endpoint }}"
+          echo "Portal static website deployment completed."
 
   configure-foundry-agent:
     name: Configure Foundry Agent
@@ -585,7 +604,15 @@ jobs:
 
       - name: Run W2 end-to-end smoke test
         shell: pwsh
+        env:
+          SMOKE_INTAKE_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_intake_api_url }}
+          SMOKE_STATUS_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_pipeline_status_api_url }}
+          SMOKE_PORTAL_ENDPOINT: ${{ needs.deploy-infrastructure.outputs.portal_web_endpoint }}
         run: |
+          Write-Output "::add-mask::$env:SMOKE_INTAKE_API_URL"
+          Write-Output "::add-mask::$env:SMOKE_STATUS_API_URL"
+          Write-Output "::add-mask::$env:SMOKE_PORTAL_ENDPOINT"
+
           $bearerToken = ""
           if ("${{ env.PORTAL_AUTH_ENABLED }}" -eq "true") {
             $bearerToken = az account get-access-token `
@@ -598,8 +625,8 @@ jobs:
           }
 
           ./scripts/azure/Test-W2EndToEndSmoke.ps1 `
-            -IntakeApiUrl "${{ needs.deploy-infrastructure.outputs.w2_intake_api_url }}" `
-            -StatusApiUrl "${{ needs.deploy-infrastructure.outputs.w2_pipeline_status_api_url }}" `
+            -IntakeApiUrl $env:SMOKE_INTAKE_API_URL `
+            -StatusApiUrl $env:SMOKE_STATUS_API_URL `
             -BearerToken $bearerToken
 
-          Write-Host "W2 upload portal deployed at ${{ needs.deploy-infrastructure.outputs.portal_web_endpoint }}"
+          Write-Host "W2 upload portal smoke test completed."
