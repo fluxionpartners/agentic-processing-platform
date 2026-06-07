@@ -264,7 +264,6 @@ jobs:
         shell: bash
         run: |
           echo "::add-mask::${{ vars.AZURE_RESOURCE_GROUP }}"
-          echo "::add-mask::${{ env.NAME_PREFIX }}"
           echo "::add-mask::${{ env.FOUNDRY_PROJECT_ENDPOINT }}"
           echo "::add-mask::${{ env.FOUNDRY_ACCOUNT_NAME }}"
           echo "::add-mask::${{ env.FOUNDRY_PROJECT_NAME }}"
@@ -311,12 +310,19 @@ jobs:
           portal_web_endpoint="$(echo "${deployment_output}" | jq -r '.portalWebEndpoint.value')"
           service_bus_name="$(echo "${deployment_output}" | jq -r '.serviceBusName.value')"
           service_bus_queue_name="$(echo "${deployment_output}" | jq -r '.serviceBusQueueName.value')"
-          echo "::add-mask::${function_app_name}"
-          echo "::add-mask::${w2_intake_api_url}"
-          echo "::add-mask::${api_management_name}"
-          echo "::add-mask::${portal_storage_account_name}"
-          echo "::add-mask::${portal_web_endpoint}"
-          echo "::add-mask::${service_bus_name}"
+          for required_output in \
+            "${function_app_name}" \
+            "${w2_intake_api_url}" \
+            "${api_management_name}" \
+            "${portal_storage_account_name}" \
+            "${portal_web_endpoint}" \
+            "${service_bus_name}" \
+            "${service_bus_queue_name}"; do
+            if [[ -z "${required_output}" || "${required_output}" == "null" ]]; then
+              echo "A required W2 intake deployment output was empty." >&2
+              exit 1
+            fi
+          done
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
           echo "w2_intake_api_url=${w2_intake_api_url}" >> "${GITHUB_OUTPUT}"
           echo "api_management_name=${api_management_name}" >> "${GITHUB_OUTPUT}"
@@ -351,10 +357,16 @@ jobs:
           tool_endpoint_base_url="$(echo "${deployment_output}" | jq -r '.toolEndpointBaseUrl.value')"
           w2_processing_api_url="$(echo "${deployment_output}" | jq -r '.w2ProcessingApiUrl.value')"
           w2_pipeline_status_api_url="$(echo "${deployment_output}" | jq -r '.w2PipelineStatusApiUrl.value')"
-          echo "::add-mask::${function_app_name}"
-          echo "::add-mask::${tool_endpoint_base_url}"
-          echo "::add-mask::${w2_processing_api_url}"
-          echo "::add-mask::${w2_pipeline_status_api_url}"
+          for required_output in \
+            "${function_app_name}" \
+            "${tool_endpoint_base_url}" \
+            "${w2_processing_api_url}" \
+            "${w2_pipeline_status_api_url}"; do
+            if [[ -z "${required_output}" || "${required_output}" == "null" ]]; then
+              echo "A required Foundry tools deployment output was empty." >&2
+              exit 1
+            fi
+          done
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
           echo "tool_endpoint_base_url=${tool_endpoint_base_url}" >> "${GITHUB_OUTPUT}"
           echo "w2_processing_api_url=${w2_processing_api_url}" >> "${GITHUB_OUTPUT}"
