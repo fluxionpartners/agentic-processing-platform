@@ -48,6 +48,10 @@ param(
 
     [switch]$SkipFoundryModelDeployment,
 
+    [switch]$EnableUploadPortalAuthentication,
+
+    [string[]]$UploadPortalRedirectUris = @("http://localhost:5173"),
+
     [switch]$GrantUserAccessAdministrator
 )
 
@@ -170,6 +174,49 @@ function Ensure-ServicePrincipal {
     }
 
     throw "Service principal for app registration '$ApplicationId' was not visible after waiting."
+}
+
+function Ensure-AppRoleAssignment {
+    param(
+        [string]$PrincipalObjectId,
+        [string]$ResourceServicePrincipalObjectId,
+        [string]$AppRoleId,
+        [string]$Description
+    )
+
+    $existingAssignments = az rest `
+        --method GET `
+        --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$PrincipalObjectId/appRoleAssignments" `
+        --output json | ConvertFrom-Json
+
+    $existing = @($existingAssignments.value) |
+        Where-Object {
+            $_.resourceId -eq $ResourceServicePrincipalObjectId -and
+            $_.appRoleId -eq $AppRoleId
+        } |
+        Select-Object -First 1
+
+    if ($existing) {
+        Write-Host "App role assignment already exists: $Description"
+        return
+    }
+
+    $body = @{
+        principalId = $PrincipalObjectId
+        resourceId = $ResourceServicePrincipalObjectId
+        appRoleId = $AppRoleId
+    } | ConvertTo-Json -Depth 5
+    $bodyPath = Join-Path $env:TEMP "app-role-assignment-$Environment.json"
+    $body | Set-Content -Path $bodyPath -Encoding utf8
+
+    az rest `
+        --method POST `
+        --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$PrincipalObjectId/appRoleAssignments" `
+        --headers "Content-Type=application/json" `
+        --body "@$bodyPath" `
+        --only-show-errors | Out-Null
+    Remove-Item -Path $bodyPath -Force
+    Write-Host "Created app role assignment: $Description"
 }
 
 function New-FederatedCredentialFile {
@@ -430,6 +477,55 @@ elseif ($FoundryProjectEndpoint -or $FoundryModelDeploymentName) {
     Write-Warning "Foundry project RBAC was not configured because FoundryAccountName and FoundryProjectName were not both provided. Agent registration needs a Foundry data-plane role such as '$FoundryProjectRoleName' at the project scope."
 }
 
+$portalAuthResult = $null
+if ($EnableUploadPortalAuthentication) {
+    $ensurePortalAppScript = Resolve-Path -Path "scripts/azure/Ensure-PortalAppRegistration.ps1" -ErrorAction SilentlyContinue
+    if (-not $ensurePortalAppScript) {
+        throw "Portal app registration script not found: scripts/azure/Ensure-PortalAppRegistration.ps1"
+    }
+
+    $effectivePortalRedirectUris = @($UploadPortalRedirectUris)
+    $portalStorageAccountName = "${NamePrefix}${Environment}portalstg".ToLower()
+    $portalStorageId = az resource list `
+        --resource-group $ResourceGroupName `
+        --resource-type "Microsoft.Storage/storageAccounts" `
+        --name $portalStorageAccountName `
+        --query "[0].id" `
+        --output tsv
+    $portalStorageEndpoint = ""
+    if ($portalStorageId) {
+        $portalStorageEndpoint = az storage account show `
+            --name $portalStorageAccountName `
+            --resource-group $ResourceGroupName `
+            --query "primaryEndpoints.web" `
+            --output tsv
+    }
+    if ($portalStorageEndpoint) {
+        $portalOrigin = $portalStorageEndpoint.TrimEnd("/")
+        if ($effectivePortalRedirectUris -notcontains $portalOrigin) {
+            $effectivePortalRedirectUris += $portalOrigin
+            Write-Host "Discovered deployed upload portal redirect URI: $portalOrigin"
+        }
+    }
+    else {
+        Write-Host "Upload portal storage account was not found yet. Bootstrap will configure the supplied redirect URIs; rerun bootstrap after the first portal deployment to add the deployed portal URI automatically."
+    }
+
+    $portalAuthJson = & $ensurePortalAppScript.Path `
+        -TenantId $TenantId `
+        -Environment $Environment `
+        -NamePrefix $NamePrefix `
+        -RedirectUris $effectivePortalRedirectUris
+    $portalAuthResult = $portalAuthJson | Select-Object -Last 1 | ConvertFrom-Json
+
+    $portalApiServicePrincipalObjectId = Ensure-ServicePrincipal -ApplicationId $portalAuthResult.apiClientId
+    Ensure-AppRoleAssignment `
+        -PrincipalObjectId $servicePrincipalObjectId `
+        -ResourceServicePrincipalObjectId $portalApiServicePrincipalObjectId `
+        -AppRoleId $portalAuthResult.smokeTestAppRoleId `
+        -Description "GitHub Actions W-2 smoke test access"
+}
+
 gh api `
     --method PUT `
     "repos/$owner/$repoName/environments/$Environment" `
@@ -458,6 +554,13 @@ if ($FoundryModelDeploymentName) {
 if ($FoundryOpenApiConnectionName) {
     gh variable set FOUNDRY_OPENAPI_CONNECTION_NAME --env $Environment --body $FoundryOpenApiConnectionName
 }
+if ($portalAuthResult) {
+    gh variable set PORTAL_AUTH_ENABLED --env $Environment --body "true"
+    gh variable set PORTAL_AUTH_TENANT_ID --env $Environment --body $portalAuthResult.tenantId
+    gh variable set PORTAL_AUTH_CLIENT_ID --env $Environment --body $portalAuthResult.spaClientId
+    gh variable set PORTAL_AUTH_SCOPE --env $Environment --body $portalAuthResult.scope
+    gh variable set PORTAL_AUTH_AUDIENCE --env $Environment --body $portalAuthResult.audience
+}
 
 Write-Host ""
 Write-Host "GitHub Actions bootstrap complete."
@@ -468,6 +571,9 @@ if ($FoundryProjectEndpoint -or $FoundryAccountName -or $FoundryProjectName -or 
     if ($FoundryAccountName -and $FoundryProjectName) {
         Write-Host "Configured Foundry project RBAC for the GitHub Actions service principal: $FoundryProjectRoleName"
     }
+}
+if ($portalAuthResult) {
+    Write-Host "Configured upload portal authentication variables: PORTAL_AUTH_ENABLED, PORTAL_AUTH_TENANT_ID, PORTAL_AUTH_CLIENT_ID, PORTAL_AUTH_SCOPE, PORTAL_AUTH_AUDIENCE"
 }
 Write-Host ""
 Write-Host "Next: run the 'Deploy Agentic Processing Platform' workflow for environment '$Environment'."

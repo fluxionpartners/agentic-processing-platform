@@ -6,12 +6,23 @@ This document describes the currently implemented HTTP boundaries.
 
 | Host | Purpose |
 | --- | --- |
+| W-2 upload portal | Browser-based synthetic W-2 upload experience. |
+| API Management | Secure ingress facade for W-2 intake uploads, processing runs, and status polling. |
 | W-2 intake Function App | Accepts uploaded W-2 documents and publishes ingestion events. |
 | Foundry tools Function App | Exposes governed tools for the Foundry supervisor agent. |
 
 ## W-2 Intake API
 
 ### Upload W-2
+
+Preferred deployed ingress:
+
+```http
+POST https://{apim-name}.azure-api.net/w2-intake/upload-w2
+Content-Type: application/json
+```
+
+Direct Function App boundary:
 
 ```http
 POST https://{w2-intake-function-host}/api/upload-w2
@@ -125,6 +136,15 @@ Tool execution failures return:
 
 ### Complete Pipeline Tool
 
+Preferred deployed ingress:
+
+```http
+POST https://{apim-name}.azure-api.net/w2-processing/run
+Content-Type: application/json
+```
+
+Foundry tools Function App boundary:
+
 ```http
 POST https://{foundry-tools-host}/api/run-w2-pipeline
 Content-Type: application/json
@@ -143,6 +163,50 @@ Content-Type: application/json
 
 The result contains the pipeline state, including extraction, validation, tax
 mapping, form generation, compliance, and persistence metadata.
+
+### Pipeline Status API
+
+Preferred deployed ingress for the upload portal:
+
+```http
+GET https://{apim-name}.azure-api.net/w2-processing/status/{correlationId}?tenantId={tenantId}
+Content-Type: application/json
+```
+
+Direct Function App boundary:
+
+```http
+GET https://{foundry-tools-host}/api/status/{correlationId}?tenantId={tenantId}
+Content-Type: application/json
+```
+
+The status endpoint reads the governed tax fact record from the configured
+persistence store. It returns `202` while the record is not yet available or the
+latest checkpoint is still in progress, and `200` when the lifecycle status is
+`complete`.
+
+Example completed response:
+
+```json
+{
+  "status": "complete",
+  "correlationId": "corr-001",
+  "recordFound": true,
+  "checkpointStage": "complete",
+  "form1040Document": {
+    "status": "success",
+    "artifact": {
+      "artifactId": "form-1040-corr-001",
+      "storageMode": "azure-blob",
+      "blobName": "tenant-001/2024/form-1040-corr-001.html"
+    }
+  },
+  "governance": {
+    "containsFullPii": false,
+    "rawExtractionPersisted": false
+  }
+}
+```
 
 ### Form 1040 Generation Tool
 
@@ -205,8 +269,10 @@ that stores the Foundry tools Function key as a custom key named
 security scheme, allowing the Foundry supervisor agent to call the deployed
 tool host without storing the Function key in source control or GitHub secrets.
 
-API Management can still be introduced later as an enterprise ingress boundary
-for external clients or stricter traffic policy.
+API Management is the deployed ingress boundary for the W-2 upload portal. APIM
+stores backend Function keys as secret named values and injects them
+server-side for upload, status, and processing operations, so browser code does
+not contain Function keys.
 
 Runtime access to Azure services uses:
 

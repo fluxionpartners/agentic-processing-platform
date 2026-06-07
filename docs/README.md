@@ -11,6 +11,7 @@ binding documentation for the Agentic Processing Platform.
 | [Deploy Your Own Environment](deploy-your-own.md) | Setting up Azure and GitHub Actions for your own environment. |
 | [GitHub Actions Deployment](github-actions-deployment.md) | CI/CD workflow internals and deployment model. |
 | [Architecture](architecture.md) | Logical architecture, security boundaries, and component responsibilities. |
+| [W-2 Upload Portal](w2-upload-portal.md) | React upload portal, APIM facade, and deployed testing flow. |
 | [Foundry Tool Execution Flow](foundry-tool-execution-flow.md) | How Foundry tool calls reach the Python workers. |
 | [Agent-To-Agent vs Supervisor-With-Tools](agent-to-agent-vs-tools.md) | Why the current regulated pipeline uses tools and where A2A fits. |
 | [Foundry Registration Automation](foundry-registration-automation.md) | How GitHub Actions creates the Foundry connection and registers the supervisor agent. |
@@ -32,6 +33,8 @@ binding documentation for the Agentic Processing Platform.
 | Capability | Status | Notes |
 | --- | --- | --- |
 | W-2 intake | Implemented | Azure Function, Blob Storage, Service Bus eventing, Key Vault settings. |
+| W-2 upload portal | Implemented | React static app deployed to Azure Storage and fronted by API Management. |
+| API Management facade | Implemented | APIM route injects backend Function key server-side and applies CORS/rate limiting. |
 | Foundry tools host | Implemented | Azure Function exposing HTTP tools for Foundry binding. |
 | Agent pipeline | Implemented | Local and deployable supervisor-worker orchestration. |
 | W-2 extraction | Implemented | Local deterministic mode and Azure Document Intelligence adapter. |

@@ -1,6 +1,14 @@
+import logging
+
 import azure.functions as func
 
-from foundry_tools_app import execute_tool, json_response, parse_json_body
+from foundry_tools_app import (
+    execute_tool,
+    get_pipeline_status,
+    json_response,
+    parse_json_body,
+    process_service_bus_event,
+)
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -18,6 +26,30 @@ def _handle_tool_request(req: func.HttpRequest, route_name: str) -> func.HttpRes
 @app.route(route="run-w2-pipeline", methods=["POST"])
 def run_w2_pipeline(req: func.HttpRequest) -> func.HttpResponse:
     return _handle_tool_request(req, "run-w2-pipeline")
+
+
+@app.route(route="status/{correlationId}", methods=["GET"])
+def get_w2_pipeline_status(req: func.HttpRequest) -> func.HttpResponse:
+    correlation_id = req.route_params.get("correlationId", "")
+    tenant_id = req.params.get("tenantId", "")
+    result, status_code = get_pipeline_status(correlation_id, tenant_id)
+    return json_response(func, result, status_code)
+
+
+@app.service_bus_queue_trigger(
+    arg_name="msg",
+    queue_name="%W2_SERVICEBUS_QUEUE_NAME%",
+    connection="W2_SERVICEBUS_CONNECTION_STRING",
+)
+def process_w2_ingestion_queue(msg: func.ServiceBusMessage) -> None:
+    message_body = msg.get_body().decode("utf-8")
+    logging.info("Processing W-2 ingestion event from Service Bus.")
+    result = process_service_bus_event(message_body)
+    logging.info(
+        "W-2 pipeline completed from Service Bus: correlationId=%s status=%s",
+        result.get("correlationId"),
+        result.get("status"),
+    )
 
 
 @app.route(route="start-w2-pipeline", methods=["POST"])

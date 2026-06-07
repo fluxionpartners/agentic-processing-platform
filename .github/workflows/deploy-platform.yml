@@ -78,6 +78,7 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
   DEPLOY_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
   AZURE_LOCATION: ${{ inputs.location || 'eastus' }}
   AZURE_COSMOS_LOCATION: ${{ inputs.cosmos_location || 'eastus2' }}
@@ -88,6 +89,11 @@ env:
   FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ inputs.foundry_model_deployment_name || vars.FOUNDRY_MODEL_DEPLOYMENT_NAME || '' }}
   FOUNDRY_OPENAPI_CONNECTION_ID: ${{ inputs.foundry_openapi_connection_id || vars.FOUNDRY_OPENAPI_CONNECTION_ID || '' }}
   FOUNDRY_OPENAPI_CONNECTION_NAME: ${{ inputs.foundry_openapi_connection_name || vars.FOUNDRY_OPENAPI_CONNECTION_NAME || 'w2toolsfnkey' }}
+  PORTAL_AUTH_ENABLED: ${{ vars.PORTAL_AUTH_ENABLED || 'false' }}
+  PORTAL_AUTH_TENANT_ID: ${{ vars.PORTAL_AUTH_TENANT_ID || '' }}
+  PORTAL_AUTH_CLIENT_ID: ${{ vars.PORTAL_AUTH_CLIENT_ID || '' }}
+  PORTAL_AUTH_SCOPE: ${{ vars.PORTAL_AUTH_SCOPE || '' }}
+  PORTAL_AUTH_AUDIENCE: ${{ vars.PORTAL_AUTH_AUDIENCE || '' }}
 
 jobs:
   validate:
@@ -125,6 +131,20 @@ jobs:
             echo "Building ${template}"
             az bicep build --file "${template}"
           done < <(find infrastructure/services -path "*/bicep/main.bicep" -type f)
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build W2 upload portal
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd src/apps/w2-upload-portal
+          npm install
+          VITE_W2_INTAKE_API_URL="https://example.azure-api.net/w2-intake/upload-w2" VITE_W2_PROCESSING_API_URL="https://example.azure-api.net/w2-processing/run" VITE_W2_STATUS_API_URL="https://example.azure-api.net/w2-processing/status" npm run build
+          popd
 
   package-w2-intake:
     name: Package W2 Intake Function
@@ -218,8 +238,16 @@ jobs:
     environment: ${{ inputs.environment || 'dev' }}
     outputs:
       w2_intake_function_app_name: ${{ steps.deploy_w2_intake.outputs.function_app_name }}
+      w2_intake_api_url: ${{ steps.deploy_w2_intake.outputs.w2_intake_api_url }}
+      api_management_name: ${{ steps.deploy_w2_intake.outputs.api_management_name }}
+      portal_storage_account_name: ${{ steps.deploy_w2_intake.outputs.portal_storage_account_name }}
+      portal_web_endpoint: ${{ steps.deploy_w2_intake.outputs.portal_web_endpoint }}
+      service_bus_name: ${{ steps.deploy_w2_intake.outputs.service_bus_name }}
+      service_bus_queue_name: ${{ steps.deploy_w2_intake.outputs.service_bus_queue_name }}
       foundry_tools_function_app_name: ${{ steps.deploy_foundry_tools.outputs.function_app_name }}
       foundry_tools_endpoint_base_url: ${{ steps.deploy_foundry_tools.outputs.tool_endpoint_base_url }}
+      w2_processing_api_url: ${{ steps.deploy_foundry_tools.outputs.w2_processing_api_url }}
+      w2_pipeline_status_api_url: ${{ steps.deploy_foundry_tools.outputs.w2_pipeline_status_api_url }}
 
     steps:
       - name: Checkout
@@ -253,7 +281,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          function_app_name="$(az deployment group create \
+          deployment_output="$(az deployment group create \
             --name "w2-intake-${{ env.DEPLOY_ENVIRONMENT }}-${{ github.run_number }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --template-file infrastructure/services/w2-intake/bicep/main.bicep \
@@ -262,9 +290,25 @@ jobs:
               environment="${{ env.DEPLOY_ENVIRONMENT }}" \
               location="${{ env.AZURE_LOCATION }}" \
               cosmosLocation="${{ env.AZURE_COSMOS_LOCATION }}" \
-            --query "properties.outputs.functionAppName.value" \
-            --output tsv)"
+              portalAuthEnabled="${{ env.PORTAL_AUTH_ENABLED }}" \
+              portalAuthTenantId="${{ env.PORTAL_AUTH_TENANT_ID }}" \
+              portalAuthAudience="${{ env.PORTAL_AUTH_AUDIENCE }}" \
+            --query "properties.outputs" \
+            --output json)"
+          function_app_name="$(echo "${deployment_output}" | jq -r '.functionAppName.value')"
+          w2_intake_api_url="$(echo "${deployment_output}" | jq -r '.w2IntakeApiUrl.value')"
+          api_management_name="$(echo "${deployment_output}" | jq -r '.apiManagementName.value')"
+          portal_storage_account_name="$(echo "${deployment_output}" | jq -r '.portalStorageAccountName.value')"
+          portal_web_endpoint="$(echo "${deployment_output}" | jq -r '.portalWebEndpoint.value')"
+          service_bus_name="$(echo "${deployment_output}" | jq -r '.serviceBusName.value')"
+          service_bus_queue_name="$(echo "${deployment_output}" | jq -r '.serviceBusQueueName.value')"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
+          echo "w2_intake_api_url=${w2_intake_api_url}" >> "${GITHUB_OUTPUT}"
+          echo "api_management_name=${api_management_name}" >> "${GITHUB_OUTPUT}"
+          echo "portal_storage_account_name=${portal_storage_account_name}" >> "${GITHUB_OUTPUT}"
+          echo "portal_web_endpoint=${portal_web_endpoint}" >> "${GITHUB_OUTPUT}"
+          echo "service_bus_name=${service_bus_name}" >> "${GITHUB_OUTPUT}"
+          echo "service_bus_queue_name=${service_bus_queue_name}" >> "${GITHUB_OUTPUT}"
 
       - name: Deploy Foundry tools infrastructure
         id: deploy_foundry_tools
@@ -279,12 +323,23 @@ jobs:
               namePrefix="${{ env.NAME_PREFIX }}" \
               environment="${{ env.DEPLOY_ENVIRONMENT }}" \
               location="${{ env.AZURE_LOCATION }}" \
+              apiManagementName="${{ steps.deploy_w2_intake.outputs.api_management_name }}" \
+              portalWebEndpoint="${{ steps.deploy_w2_intake.outputs.portal_web_endpoint }}" \
+              serviceBusName="${{ steps.deploy_w2_intake.outputs.service_bus_name }}" \
+              serviceBusQueueName="${{ steps.deploy_w2_intake.outputs.service_bus_queue_name }}" \
+              portalAuthEnabled="${{ env.PORTAL_AUTH_ENABLED }}" \
+              portalAuthTenantId="${{ env.PORTAL_AUTH_TENANT_ID }}" \
+              portalAuthAudience="${{ env.PORTAL_AUTH_AUDIENCE }}" \
             --query "properties.outputs" \
             --output json)"
           function_app_name="$(echo "${deployment_output}" | jq -r '.functionAppName.value')"
           tool_endpoint_base_url="$(echo "${deployment_output}" | jq -r '.toolEndpointBaseUrl.value')"
+          w2_processing_api_url="$(echo "${deployment_output}" | jq -r '.w2ProcessingApiUrl.value')"
+          w2_pipeline_status_api_url="$(echo "${deployment_output}" | jq -r '.w2PipelineStatusApiUrl.value')"
           echo "function_app_name=${function_app_name}" >> "${GITHUB_OUTPUT}"
           echo "tool_endpoint_base_url=${tool_endpoint_base_url}" >> "${GITHUB_OUTPUT}"
+          echo "w2_processing_api_url=${w2_processing_api_url}" >> "${GITHUB_OUTPUT}"
+          echo "w2_pipeline_status_api_url=${w2_pipeline_status_api_url}" >> "${GITHUB_OUTPUT}"
 
   deploy-w2-intake:
     name: Deploy W2 Intake Function App
@@ -343,6 +398,75 @@ jobs:
           package: artifacts/foundry-tools.zip
           scm-do-build-during-deployment: true
           enable-oryx-build: true
+
+  deploy-upload-portal:
+    name: Deploy W2 Upload Portal
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs:
+      - deploy-infrastructure
+      - deploy-w2-intake
+      - deploy-foundry-tools
+    environment: ${{ inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build portal
+        shell: bash
+        env:
+          VITE_W2_INTAKE_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_intake_api_url }}
+          VITE_W2_PROCESSING_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_processing_api_url }}
+          VITE_W2_STATUS_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_pipeline_status_api_url }}
+          VITE_AUTH_ENABLED: ${{ env.PORTAL_AUTH_ENABLED }}
+          VITE_AUTH_TENANT_ID: ${{ env.PORTAL_AUTH_TENANT_ID }}
+          VITE_AUTH_CLIENT_ID: ${{ env.PORTAL_AUTH_CLIENT_ID }}
+          VITE_AUTH_SCOPE: ${{ env.PORTAL_AUTH_SCOPE }}
+        run: |
+          set -euo pipefail
+          pushd src/apps/w2-upload-portal
+          npm install
+          npm run build
+          popd
+
+      - name: Publish portal static assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          storage_account="${{ needs.deploy-infrastructure.outputs.portal_storage_account_name }}"
+          az storage blob service-properties update \
+            --account-name "${storage_account}" \
+            --static-website \
+            --index-document index.html \
+            --404-document index.html \
+            --auth-mode key \
+            --only-show-errors
+          az storage blob delete-batch \
+            --account-name "${storage_account}" \
+            --source '$web' \
+            --auth-mode key \
+            --only-show-errors || true
+          az storage blob upload-batch \
+            --account-name "${storage_account}" \
+            --destination '$web' \
+            --source src/apps/w2-upload-portal/dist \
+            --overwrite \
+            --auth-mode key \
+            --only-show-errors
+          echo "Portal URL: ${{ needs.deploy-infrastructure.outputs.portal_web_endpoint }}"
 
   configure-foundry-agent:
     name: Configure Foundry Agent
@@ -441,12 +565,41 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' }}
     needs:
+      - deploy-infrastructure
       - deploy-w2-intake
       - deploy-foundry-tools
+      - deploy-upload-portal
     environment: ${{ inputs.environment || 'dev' }}
 
     steps:
-      - name: Smoke test placeholder
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        if: ${{ env.PORTAL_AUTH_ENABLED == 'true' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run W2 end-to-end smoke test
+        shell: pwsh
         run: |
-          echo "Infrastructure and W2 intake deployment completed."
-          echo "Add authenticated endpoint smoke tests after API Management or function auth is finalized."
+          $bearerToken = ""
+          if ("${{ env.PORTAL_AUTH_ENABLED }}" -eq "true") {
+            $bearerToken = az account get-access-token `
+              --resource "${{ env.PORTAL_AUTH_AUDIENCE }}" `
+              --query accessToken `
+              --output tsv
+          }
+          if ("${{ env.PORTAL_AUTH_ENABLED }}" -eq "true" -and [string]::IsNullOrWhiteSpace($bearerToken)) {
+            throw "PORTAL_AUTH_ENABLED is true, but GitHub Actions could not acquire a smoke-test access token. Rerun bootstrap with -EnableUploadPortalAuthentication so the GitHub service principal receives the W-2 smoke-test app role."
+          }
+
+          ./scripts/azure/Test-W2EndToEndSmoke.ps1 `
+            -IntakeApiUrl "${{ needs.deploy-infrastructure.outputs.w2_intake_api_url }}" `
+            -StatusApiUrl "${{ needs.deploy-infrastructure.outputs.w2_pipeline_status_api_url }}" `
+            -BearerToken $bearerToken
+
+          Write-Host "W2 upload portal deployed at ${{ needs.deploy-infrastructure.outputs.portal_web_endpoint }}"

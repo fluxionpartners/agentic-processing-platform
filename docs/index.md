@@ -10,7 +10,8 @@ durable tax fact persistence.
 2. [Deploy Your Own Environment](deploy-your-own.md)
 3. [GitHub Actions Deployment](github-actions-deployment.md)
 4. [Architecture](architecture.md)
-5. [Foundry Tool Execution Flow](foundry-tool-execution-flow.md)
+5. [W-2 Upload Portal](w2-upload-portal.md)
+6. [Foundry Tool Execution Flow](foundry-tool-execution-flow.md)
 
 ## Agent Flow
 
@@ -44,6 +45,7 @@ flowchart TB
 ## Key Outcomes
 
 - Upload and process W-2 documents.
+- Test deployed W-2 intake through a React portal and API Management facade.
 - Extract normalized W-2 facts locally or with Azure AI Document Intelligence.
 - Validate required fields and confidence.
 - Route low-confidence or invalid records to human review.

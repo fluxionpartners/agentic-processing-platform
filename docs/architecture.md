@@ -22,6 +22,7 @@ These zones support a secure, event-driven, multi-agent workflow for W-2 process
 flowchart TD
   subgraph Ingestion[Ingestion & API Boundary]
     direction TB
+    Portal["W-2 Upload Portal"]
     APIM["API Management"]
     IntakeSvc["Intake Service / Azure Functions"]
     Storage["Azure Storage: raw W-2 and generated 1040 artifacts"]
@@ -67,10 +68,15 @@ flowchart TD
     Entra["Entra ID"]
   end
 
-  APIM -->|Secure API / Upload| IntakeSvc
+  Portal -->|Upload request| APIM
+  APIM -->|Backend Function key injection| IntakeSvc
   IntakeSvc -->|Store raw document| Storage
-  IntakeSvc -->|Publish ingestion event| EventGrid
-  EventGrid -->|Trigger workflow| Orchestrator
+  IntakeSvc -->|Publish ingestion event| ServiceBus
+  ServiceBus -->|Trigger async processing| ToolHost
+  ToolHost -->|Persist status checkpoints| Cosmos
+  Portal -->|Poll processing status| APIM
+  APIM -->|Status request with Function key injection| ToolHost
+  EventGrid -->|Optional future event fan-out| Orchestrator
   Orchestrator -->|Invoke| Agents
   Orchestrator -->|Authenticated OpenAPI tool calls| OpenAPIConnection
   OpenAPIConnection -->|x-functions-key| ToolHost
@@ -86,24 +92,30 @@ flowchart TD
   Agents -->|Secrets access by managed identity| KeyVault
   Orchestrator -->|Workflow state| Memory
   IntakeSvc -->|Integration events| ServiceBus
-  Durable -->|Orchestrate long-running workflows| ServiceBus
+  Durable -->|Optional long-running workflow coordination| ServiceBus
   IntakeSvc -->|Audit / logs| Monitor
   Agents -->|Telemetry| Monitor
   SQL -->|Data governance| Purview
   Cosmos -->|Data governance| Purview
   KeyVault -->|Identity access| Entra
-  APIM -->|Authentication| Entra
+  APIM -.->|JWT validation when identity provider is configured| Entra
   Monitor -->|Security alerts| Defender
   Defender -->|Security posture| Entra
 ```
 
 ## Component Responsibilities
 
+### W-2 Upload Portal
+- Provides a browser-based synthetic W-2 upload experience for deployed testing.
+- Calls API Management instead of the Function App directly.
+- Receives only the APIM URL at build time; no Function keys are shipped to the browser.
+
 ### API Management / Intake Service
-- Expose secure ingress for W-2 uploads and query APIs.
-- Authenticate requests using Entra ID.
+- Expose secure ingress for W-2 uploads and pipeline status APIs.
+- Store the backend Function key as an APIM secret named value and inject it server-side.
 - Route ingestion payloads to Azure Functions and Event Grid.
-- Apply request validation, throttling, and DLP policies.
+- Apply CORS, throttling, request validation, and future DLP policies.
+- Add Entra ID JWT validation when tenant-specific application registration values are available.
 
 ### Azure Storage
 - Store raw W-2 documents, generated 1040 draft artifacts, and evidence packages.
@@ -122,6 +134,8 @@ flowchart TD
 
 ### Foundry Tools Function App
 - Expose governed Python tools as HTTP endpoints for Foundry tool binding.
+- Process W-2 ingestion events asynchronously from Service Bus.
+- Expose a status endpoint that reads governed checkpoints for portal polling.
 - Map endpoint routes to logical tool names and deterministic backend functions.
 - Use managed identity, Key Vault references, and Cosmos DB RBAC for runtime access.
 - Generate draft Form 1040 artifacts from mapped tax facts and store artifact metadata for audit and resume.
@@ -250,7 +264,7 @@ flowchart TD
 
   Intake -->|"Store raw document"| RawStorage
   Intake -->|"Send ingestion event"| Bus
-  Bus -->|"Trigger or resume workflow"| Foundry
+  Bus -->|"Trigger async processing"| ToolHost
 
   Foundry -->|"OpenAPI tool call"| FoundryConnection
   FoundryConnection -->|"Inject x-functions-key"| ToolHost
@@ -280,14 +294,15 @@ Key points for security review:
 
 1. User uploads a W-2 through API Management.
 2. Intake Service stores the raw file in Azure Storage.
-3. Intake Service publishes an ingestion event to Event Grid.
-4. The Foundry Orchestrator receives the event and triggers the agent workflow.
+3. Intake Service publishes an ingestion event to Service Bus.
+4. The Foundry tools Function App consumes the event and runs the governed agent pipeline asynchronously.
 5. Agents call Azure AI Document Intelligence and Azure OpenAI for extraction and reasoning.
 6. Tax mapping creates 1040-ready fields and planning facts.
 7. Form generation renders a draft 1040 artifact and stores it in the configured artifact store.
 8. Governed checkpoints, mapping results, artifact metadata, and compliance evidence are stored in Cosmos DB.
-9. Knowledge retrieval is performed from Azure AI Search.
-10. Telemetry and audit events are recorded in Azure Monitor.
+9. The portal polls the APIM status endpoint by correlation ID until the pipeline reaches `complete`.
+10. Knowledge retrieval is performed from Azure AI Search when configured.
+11. Telemetry and audit events are recorded in Azure Monitor.
 
 ## Diagram Notes
 

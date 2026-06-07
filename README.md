@@ -22,7 +22,10 @@ document-processing programs.
 ## What This Builds
 
 - W-2 intake Azure Function for secure document ingestion.
+- React W-2 upload portal hosted as an Azure Storage static website.
+- API Management facade for W-2 intake uploads and governed processing runs.
 - Foundry tools Azure Function exposing governed HTTP tools.
+- Service Bus-triggered async pipeline processor and status API.
 - Supervisor-with-tools orchestration pattern for regulated processing.
 - Local agent pipeline that mirrors production configuration.
 - Azure AI Document Intelligence adapter for W-2 extraction.
@@ -57,11 +60,15 @@ deployment flow.
 
 ```mermaid
 flowchart TB
-  Client[Client or API Management] --> IntakeFn[W2 Intake Function App]
+  Client[Client or Upload Portal] --> APIM[API Management]
+  APIM --> IntakeFn[W2 Intake Function App]
+  APIM --> ToolHost[Foundry Tools Function App]
   IntakeFn --> RawStorage[Raw W2 Blob Storage]
   IntakeFn --> Eventing["Service Bus / Event Trigger"]
-  Eventing --> Foundry[Foundry Supervisor Agent]
-  Foundry --> ToolHost[Foundry Tools Function App]
+  Eventing --> ToolHost[Foundry Tools Function App]
+  APIM --> StatusAPI[Pipeline Status API]
+  StatusAPI --> ToolHost
+  Foundry[Foundry Supervisor Agent] --> ToolHost
   ToolHost --> Agents[Governed Python Agent Workers]
   Agents --> DocIntel[Azure AI Document Intelligence]
   Agents --> Cosmos[Cosmos DB Tax Fact Checkpoints]
@@ -84,6 +91,7 @@ configuration validation, and durable checkpoints.
 |   |-- w2-intake/
 |   `-- foundry-tools/
 |-- scripts/github/                    # GitHub Actions bootstrap automation
+|-- src/apps/w2-upload-portal/         # React upload portal
 |-- src/foundry_agents/                # Agent workers, prompts, tools, evals
 |-- src/services/w2-intake/            # W-2 intake Function App
 |-- src/services/foundry-tools/        # Foundry tools Function App
@@ -182,6 +190,7 @@ configured Foundry project and model deployment. See
 | [GitHub Actions Deployment](docs/github-actions-deployment.md) | CI/CD workflow details |
 | [Agent Flow](docs/agent-flow.md) | Agent sequence, tools, and persistence flow |
 | [Architecture](docs/architecture.md) | Logical architecture and security boundaries |
+| [W-2 Upload Portal](docs/w2-upload-portal.md) | Browser upload app and APIM ingress flow |
 | [Foundry Tool Execution Flow](docs/foundry-tool-execution-flow.md) | HTTP tool host and registry flow |
 | [Agent-To-Agent vs Tools](docs/agent-to-agent-vs-tools.md) | Design pattern comparison |
 | [Enterprise Blueprint](docs/enterprise-foundry-tax-ai-blueprint.md) | Broader enterprise reference architecture |

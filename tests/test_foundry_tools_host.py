@@ -70,6 +70,84 @@ class FoundryToolsHostTests(unittest.TestCase):
         self.assertEqual(status_code, 404)
         self.assertEqual(result["error"], "unknown_tool_route")
 
+    def test_get_pipeline_status_returns_processing_when_record_not_found(self):
+        class EmptyStore:
+            def load(self, record_id, partition_key=None):
+                self.record_id = record_id
+                self.partition_key = partition_key
+                return None
+
+        store = EmptyStore()
+        with patch.object(foundry_tools_app, "load_agent_settings", return_value=object()):
+            with patch.object(foundry_tools_app, "create_tax_fact_store", return_value=store):
+                result, status_code = foundry_tools_app.get_pipeline_status(
+                    "corr-001",
+                    "tenant-001",
+                )
+
+        self.assertEqual(status_code, 202)
+        self.assertEqual(result["status"], "processing")
+        self.assertFalse(result["recordFound"])
+        self.assertEqual(store.record_id, "tax-facts-corr-001")
+        self.assertEqual(store.partition_key, "tenant-001")
+
+    def test_get_pipeline_status_returns_completed_record_summary(self):
+        class CompletedStore:
+            def load(self, record_id, partition_key=None):
+                return {
+                    "lifecycleStatus": "complete",
+                    "checkpointStage": "complete",
+                    "correlationId": "corr-002",
+                    "tenantId": "tenant-001",
+                    "taxpayerId": "taxpayer-001",
+                    "taxYear": 2024,
+                    "document": {"documentName": "W2.pdf"},
+                    "extraction": {"status": "success", "overallConfidence": 0.96},
+                    "validation": {"status": "passed"},
+                    "taxPlanning": {"mappingStatus": "success"},
+                    "form1040Document": {
+                        "status": "success",
+                        "artifact": {"artifactId": "form-1040-corr-002"},
+                    },
+                    "compliance": {"status": "passed"},
+                    "governance": {"containsFullPii": False},
+                }
+
+        with patch.object(foundry_tools_app, "load_agent_settings", return_value=object()):
+            with patch.object(foundry_tools_app, "create_tax_fact_store", return_value=CompletedStore()):
+                result, status_code = foundry_tools_app.get_pipeline_status("corr-002")
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "complete")
+        self.assertTrue(result["recordFound"])
+        self.assertEqual(result["form1040Document"]["artifact"]["artifactId"], "form-1040-corr-002")
+
+    def test_process_service_bus_event_validates_required_fields(self):
+        with self.assertRaisesRegex(ValueError, "missing required fields"):
+            foundry_tools_app.process_service_bus_event('{"correlationId":"corr-003"}')
+
+    def test_process_service_bus_event_invokes_pipeline(self):
+        payload = {
+            "correlationId": "corr-004",
+            "tenantId": "tenant-001",
+            "taxpayerId": "taxpayer-001",
+            "documentName": "W2.pdf",
+            "blobUri": "https://example/w2.pdf",
+        }
+
+        with patch.object(foundry_tools_app, "load_agent_settings", return_value=object()):
+            with patch.object(
+                foundry_tools_app,
+                "process_w2_ingestion_event",
+                return_value={"status": "complete", "correlationId": "corr-004"},
+            ) as process_mock:
+                result = foundry_tools_app.process_service_bus_event(
+                    __import__("json").dumps(payload)
+                )
+
+        self.assertEqual(result["status"], "complete")
+        process_mock.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

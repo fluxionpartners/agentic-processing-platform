@@ -20,6 +20,7 @@ GitHub Actions
 |-- provision Azure infrastructure, manual dispatch only
 |-- deploy W2 intake Function App, manual dispatch only
 |-- deploy Foundry tools Function App, manual dispatch only
+|-- deploy W2 upload portal, manual dispatch only
 |-- register Foundry agent, manual dispatch and opt-in only
 `-- run smoke tests, manual dispatch only
 ```
@@ -56,7 +57,9 @@ flowchart TD
   WhatIf --> Provision["Provision Azure infrastructure"]
   Provision --> DeployW2["Deploy W2 intake Function App"]
   Provision --> DeployTools["Deploy Foundry tools Function App"]
-  DeployW2 --> Smoke["Deployment smoke test"]
+  DeployW2 --> DeployPortal["Deploy W2 upload portal"]
+  DeployTools --> DeployPortal
+  DeployPortal --> Smoke["Deployment smoke test"]
   DeployTools --> Smoke
   PackageAgent --> FoundryGate{"deploy_foundry_registration == true"}
   FoundryGate -- "false" --> SkipFoundry["Skip Foundry registration"]
@@ -219,6 +222,14 @@ upload `WEBSITE_RUN_FROM_PACKAGE` content for Linux Consumption apps and cannot
 publish when the value is a Key Vault reference. Business/runtime data settings
 continue to use Key Vault references or managed identity where supported.
 
+API Management stores backend Function keys as secret named values and injects
+them server-side for upload and processing operations. The React portal is
+configured only with APIM URLs, not Function App URLs or keys.
+
+When upload portal authentication is enabled during bootstrap, the workflow also
+configures APIM `validate-jwt` with the portal API app audience and builds the
+React app with MSAL settings from GitHub Environment variables.
+
 Python Function Apps use the v2 programming model with worker indexing enabled.
 The workflow requests Oryx remote build during Function deployment so Azure
 installs Python dependencies from `requirements.txt` before trigger sync.
@@ -283,12 +294,27 @@ The workflow fully supports:
 
 - `src/services/w2-intake` deployed to the Function App created by
   `infrastructure/services/w2-intake/bicep/main.bicep`.
+- `src/apps/w2-upload-portal` built as a React static application and deployed
+  to the static website storage account created by the W2 intake infrastructure.
 - `src/services/foundry-tools` deployed to the Function App created by
   `infrastructure/services/foundry-tools/bicep/main.bicep`.
 
+The W2 intake infrastructure configures:
+
+- API Management Consumption SKU.
+- `POST /w2-intake/upload-w2` APIM operation.
+- APIM CORS policy for the deployed portal origin and local development.
+- APIM per-IP rate limiting for upload traffic.
+- APIM secret named value containing the backend Function key.
+- Optional APIM JWT validation for the Entra-protected upload portal.
+
 The Foundry tools infrastructure also provisions the Blob container used for
-draft Form 1040 artifacts and configures the tools Function App for Blob-backed
-artifact storage.
+draft Form 1040 artifacts, configures the tools Function App for Blob-backed
+artifact storage, adds the Service Bus-triggered async processor, and exposes
+APIM processing endpoints:
+
+- `POST /w2-processing/run` for direct diagnostics and Foundry-style tool execution.
+- `GET /w2-processing/status/{correlationId}` for portal polling and smoke tests.
 
 Both Function Apps use the shared environment-level Log Analytics workspace and
 Application Insights component created by the W2 intake infrastructure. Separate
@@ -317,9 +343,18 @@ scripts/foundry/Register-FoundryAgent.ps1
 W2 intake Function App
   Receives document-upload requests and publishes ingestion events.
 
+W2 upload portal
+  Browser-based synthetic W-2 upload experience that calls API Management for
+  intake upload and polls API Management for async pipeline status.
+
+API Management
+  Fronts the W2 intake and W2 processing APIs and injects backend Function
+  authentication server-side.
+
 Foundry tools Function App
-  Exposes HTTP endpoints for the Foundry supervisor agent tools and stores
-  generated draft 1040 artifacts.
+  Exposes HTTP endpoints for the Foundry supervisor agent tools, processes
+  Service Bus W-2 ingestion events asynchronously, and stores generated draft
+  1040 artifacts.
 
 Azure AI Foundry supervisor agent
   Registered from agent.yaml, prompts, tool schemas, and eval configuration.
@@ -333,6 +368,7 @@ Important tool endpoints include:
 
 ```text
 POST /api/run-w2-pipeline
+GET /api/status/{correlationId}
 POST /api/extract-w2-document
 POST /api/map-w2-tax-facts
 POST /api/generate-form-1040-document
@@ -360,3 +396,23 @@ One repo commit
 This keeps the business capability layer and Foundry layer together in source
 control while still allowing each runtime to scale, secure, and deploy
 independently.
+
+## Deployment Smoke Test
+
+The `smoke-test` job is a real end-to-end test. It submits a synthetic W-2
+through APIM, verifies the intake response, then polls the APIM status endpoint
+until the governed pipeline reaches `complete` and returns Form 1040 artifact
+metadata.
+
+The smoke test script is:
+
+```text
+scripts/azure/Test-W2EndToEndSmoke.ps1
+```
+
+When portal/APIM authentication is enabled, rerun bootstrap with
+`-EnableUploadPortalAuthentication`. The bootstrap grants the GitHub Actions
+OIDC service principal a smoke-test application role on the portal API app
+registration. During the workflow, GitHub Actions mints a short-lived access
+token for the APIM audience and uses that token for the smoke test. No reusable
+bearer token is stored in GitHub.

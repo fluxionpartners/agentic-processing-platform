@@ -5,12 +5,15 @@ stand up their own lower environment with minimal manual work.
 
 ## What Gets Deployed
 
-The GitHub Actions workflow deploys two Azure hosts from the same repository:
+The GitHub Actions workflow deploys multiple Azure hosts from the same
+repository:
 
 | Host | Source | Purpose |
 | --- | --- | --- |
-| W-2 intake Function App | `src/services/w2-intake` | Accepts W-2 upload requests and emits ingestion events. |
-| Foundry tools Function App | `src/services/foundry-tools` | Exposes HTTP tools used by the Foundry supervisor agent. |
+| W-2 upload portal | `src/apps/w2-upload-portal` | Browser-based synthetic W-2 upload experience. |
+| API Management | `infrastructure/services/w2-intake` and `infrastructure/services/foundry-tools` | Secure ingress facade for upload and processing requests. |
+| W-2 intake Function App | `src/services/w2-intake` | Accepts W-2 upload requests and emits Service Bus ingestion events. |
+| Foundry tools Function App | `src/services/foundry-tools` | Processes Service Bus events asynchronously and exposes HTTP tools/status APIs. |
 
 The workflow also packages the Foundry agent artifacts from
 `src/foundry_agents`. When enabled, it also creates or updates the Foundry
@@ -63,6 +66,7 @@ The script creates or reuses:
   - `AZURE_RESOURCE_GROUP`
   - `AZURE_LOCATION`
   - `NAME_PREFIX`
+  - `PORTAL_AUTH_*`, when upload portal authentication is enabled
   - `FOUNDRY_PROJECT_ENDPOINT`, when supplied
   - `FOUNDRY_ACCOUNT_NAME`, when supplied
   - `FOUNDRY_PROJECT_NAME`, when supplied
@@ -71,6 +75,17 @@ The script creates or reuses:
 
 The workflow uses OIDC federation, so no Azure client secret is stored in
 GitHub.
+
+To require Entra authentication from the upload portal to API Management, add:
+
+```powershell
+  -EnableUploadPortalAuthentication `
+  -UploadPortalRedirectUris @("http://localhost:5173")
+```
+
+You can rerun bootstrap later with the deployed portal URL added to
+`-UploadPortalRedirectUris`. The workflow uses the resulting GitHub variables
+to build the portal and configure APIM JWT validation.
 
 `-ProvisionFoundry` creates or updates the Azure AI Foundry account, Foundry
 project, and model deployment before writing the Foundry values into GitHub
@@ -92,7 +107,7 @@ In GitHub:
    as workflow inputs.
 
 The workflow validates tests and Bicep first, then provisions Azure resources
-and deploys each Function App package.
+and deploys the Function App packages and upload portal.
 
 ## Expected Azure Resources
 
@@ -100,6 +115,8 @@ The Bicep templates provision the core resources required by the current
 solution:
 
 - Function Apps for intake and Foundry tools.
+- API Management Consumption instance with W-2 upload and processing operations.
+- Static website storage account for the W-2 upload portal.
 - Storage accounts for raw documents, runtime storage, and generated artifacts.
 - Blob container for draft Form 1040 artifacts.
 - Cosmos DB database/container for governed tax fact checkpoints.
@@ -155,9 +172,21 @@ az bicep build --file infrastructure/services/w2-intake/bicep/main.bicep
 az bicep build --file infrastructure/services/foundry-tools/bicep/main.bicep
 ```
 
-After deployment, review the GitHub Actions output for Function App names and
-Azure deployment status. Authenticated endpoint smoke tests should be added once
-API Management or the final Function authentication model is selected.
+After deployment, review the GitHub Actions output for:
+
+- W-2 intake Function App name.
+- Foundry tools Function App name.
+- W-2 upload portal URL.
+- APIM W-2 intake API URL.
+- APIM W-2 processing API URL.
+
+Open the portal URL and submit the built-in synthetic W-2 first. A successful
+request returns `202 Accepted` with a blob URI, Service Bus message ID, and
+correlation ID. The Foundry tools Function App then consumes the Service Bus
+message, extracts W-2 facts, maps tax facts, generates a draft Form 1040
+artifact, and persists the governed result. The portal polls APIM for status
+until the pipeline reaches `complete`.
+See [W-2 Upload Portal](w2-upload-portal.md) for the detailed test flow.
 
 ## Production Notes
 

@@ -6,11 +6,21 @@ param environment string = 'dev'
 @description('Azure region for Cosmos DB. Cosmos capacity can differ from the rest of the platform region.')
 param cosmosLocation string = location
 
+@description('Enable Entra ID JWT validation on the APIM W-2 intake upload operation.')
+param portalAuthEnabled bool = false
+
+@description('Tenant ID used by APIM validate-jwt when portal authentication is enabled.')
+param portalAuthTenantId string = ''
+
+@description('Expected JWT audience for the W-2 intake API app registration.')
+param portalAuthAudience string = ''
+
 var storageAccountName = toLower('${namePrefix}${environment}stg')
 var apiMgmtName = toLower('${namePrefix}${environment}apim')
 var functionAppName = toLower('${namePrefix}${environment}fn')
 var appServicePlanName = toLower('${namePrefix}${environment}plan')
 var keyVaultName = toLower('${namePrefix}${environment}kv')
+var portalStorageAccountName = toLower('${namePrefix}${environment}portalstg')
 var serviceBusName = toLower('${namePrefix}${environment}sb')
 var logWorkspaceName = toLower('${namePrefix}${environment}law')
 var appInsightsName = toLower('${namePrefix}${environment}ai')
@@ -19,6 +29,9 @@ var containerName = 'raw-w2'
 var serviceBusQueueName = 'w2-ingestion-queue'
 var apiManagementPublisherName = 'TaxAI Publisher'
 var apiManagementPublisherEmail = 'audit@contoso.com'
+var portalWebEndpoint = portalStorageAccount.properties.primaryEndpoints.web
+var portalWebOrigin = endsWith(portalWebEndpoint, '/') ? substring(portalWebEndpoint, 0, length(portalWebEndpoint) - 1) : portalWebEndpoint
+var portalJwtPolicy = portalAuthEnabled ? '<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. A valid Entra access token is required."><openid-config url="${az.environment().authentication.loginEndpoint}${portalAuthTenantId}/v2.0/.well-known/openid-configuration" /><audiences><audience>${portalAuthAudience}</audience></audiences></validate-jwt>' : ''
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -164,6 +177,31 @@ resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   }
 }
 
+resource portalStorageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
+  name: portalStorageAccountName
+  location: location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
+    encryption: {
+      services: {
+        blob: {
+          enabled: true
+        }
+      }
+      keySource: 'Microsoft.Storage'
+    }
+  }
+}
+
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: appServicePlanName
   location: location
@@ -284,14 +322,96 @@ resource functionAppKeyVaultAccessPolicy 'Microsoft.KeyVault/vaults/accessPolici
   }
 }
 
+resource w2IntakeFunctionKeyNamedValue 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = {
+  parent: apiManagement
+  name: 'w2-intake-function-key'
+  properties: {
+    displayName: 'w2-intake-function-key'
+    secret: true
+    value: listKeys('${functionApp.id}/host/default', '2022-03-01').functionKeys.default
+  }
+}
+
+resource w2IntakeApi 'Microsoft.ApiManagement/service/apis@2022-08-01' = {
+  parent: apiManagement
+  name: 'w2-intake'
+  properties: {
+    displayName: 'W2 Intake API'
+    description: 'Secure APIM facade for W-2 intake document uploads.'
+    path: 'w2-intake'
+    protocols: [
+      'https'
+    ]
+    serviceUrl: 'https://${functionApp.properties.defaultHostName}/api'
+    subscriptionRequired: false
+  }
+  dependsOn: [
+    w2IntakeFunctionKeyNamedValue
+  ]
+}
+
+resource uploadW2Operation 'Microsoft.ApiManagement/service/apis/operations@2022-08-01' = {
+  parent: w2IntakeApi
+  name: 'upload-w2'
+  properties: {
+    displayName: 'Upload W-2'
+    method: 'POST'
+    urlTemplate: '/upload-w2'
+    description: 'Accepts a base64 encoded synthetic or governed W-2 document for ingestion.'
+    request: {
+      queryParameters: []
+      headers: [
+        {
+          name: 'Content-Type'
+          required: true
+          type: 'string'
+          defaultValue: 'application/json'
+        }
+      ]
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 202
+        description: 'Document accepted for ingestion.'
+      }
+      {
+        statusCode: 400
+        description: 'Invalid upload request.'
+      }
+      {
+        statusCode: 500
+        description: 'Ingestion failed.'
+      }
+    ]
+  }
+}
+
+resource uploadW2OperationPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2022-08-01' = {
+  parent: uploadW2Operation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins><origin>${portalWebOrigin}</origin><origin>http://localhost:5173</origin></allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Request.IpAddress)" /><set-header name="x-functions-key" exists-action="override"><value>{{w2-intake-function-key}}</value></set-header><set-header name="x-demo-portal" exists-action="override"><value>w2-upload</value></set-header></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
 output storageAccountName string = storageAccount.name
 output blobContainerName string = blobContainer.name
 output keyVaultName string = keyVault.name
+output portalStorageAccountName string = portalStorageAccount.name
+output portalWebEndpoint string = portalWebEndpoint
 output logWorkspaceName string = logWorkspace.name
 output serviceBusName string = serviceBus.name
 output serviceBusQueueName string = serviceBusQueue.name
 output functionAppName string = functionApp.name
 output apiManagementName string = apiManagement.name
+output apimGatewayUrl string = apiManagement.properties.gatewayUrl
+output w2IntakeApiUrl string = '${apiManagement.properties.gatewayUrl}/w2-intake/upload-w2'
 output cosmosAccountName string = cosmosAccount.name
 output storageConnectionStringSecretName string = storageConnectionStringSecret.name
 output serviceBusConnectionStringSecretName string = serviceBusConnectionStringSecret.name
