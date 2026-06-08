@@ -91,6 +91,38 @@ everything GitHub Actions needs:
   -GrantUserAccessAdministrator
 ```
 
+### Script Parameter Reference
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `-SubscriptionId` | String | **Yes** | - | Azure Subscription ID containing the target environment resources. |
+| `-TenantId` | String | **Yes** | - | Azure Entra ID Tenant ID. |
+| `-ResourceGroupName` | String | **Yes** | - | Name of the Azure Resource Group to create or use. |
+| `-Environment` | String | No | `dev` | Target deployment environment name (one of `dev`, `test`, `uat`, `prod`). |
+| `-Location` | String | No | `eastus` | Azure region for provisioning resources. |
+| `-NamePrefix` | String | No | `taxai` | Prefix for naming created Azure resources. |
+| `-GitHubOwner` | String | No | *(Auto-detected)* | GitHub repository owner/organization name (auto-detected via `gh cli` if empty). |
+| `-GitHubRepo` | String | No | *(Auto-detected)* | GitHub repository name (auto-detected via `gh cli` if empty). |
+| `-AppRegistrationName` | String | No | `github-<repo>-<env>` | Custom name for the created Entra ID application registration. |
+| `-ProvisionFoundry` | Switch | No | `False` | When set, automatically provisions the Azure AI Foundry account, project, and model deployment. |
+| `-FoundryAccountName` | String | No | `<prefix><env>-foundry` | Azure AI Foundry Hub/Account name. |
+| `-FoundryProjectName` | String | No | `<prefix>-<env>-project` | Azure AI Foundry Project name. |
+| `-FoundryLocation` | String | No | Matches `-Location` | Azure region for AI Foundry resources. |
+| `-FoundryModelName` | String | No | `gpt-4o-mini` | AI model name to deploy. |
+| `-FoundryModelVersion` | String | No | `2024-07-18` | Model version to deploy. |
+| `-FoundryModelSkuName` | String | No | `GlobalStandard` | Deployment SKU type (e.g. `GlobalStandard`, `Standard`, `DataZoneStandard`). |
+| `-FoundryModelSkuCapacity` | Integer | No | `10` | Deployment capacity in thousands of TPM (Token Per Minute). |
+| `-SkipFoundryModelDeployment` | Switch | No | `False` | Skip model deployment if the model is already deployed in the hub. |
+| `-FoundryProjectEndpoint` | String | No | - | Endpoint URL of an existing centrally managed Foundry Project. |
+| `-FoundryModelDeploymentName` | String | No | Matches model/env | Deployment name of the model in the Foundry Project. |
+| `-FoundryOpenApiConnectionName`| String | No | `w2toolsfnkey` | Name of the connection to create/use in AI Foundry. |
+| `-FoundrySupervisorAgentName` | String | No | `foundry-w2-tax-orchestrator` | Name of the supervisor agent. |
+| `-FoundryProjectRoleName` | String | No | `Foundry Project Manager` | RBAC role to assign to the SP on the Foundry resource. |
+| `-EnableUploadPortalAuthentication` | Switch | No | `False` | Switch to configure Entra ID authentication on the portal upload app and APIM. |
+| `-UploadPortalRedirectUris` | String[] | No | `http://localhost:5173` | Allowed redirect URIs for the Portal OAuth authentication. |
+| `-PortalExecutionMode` | String | No | `direct` | Ingress execution mode (one of `direct`, `foundry-agent`, `selectable`). |
+| `-GrantUserAccessAdministrator`| Switch | No | `False` | Grant `User Access Administrator` to the service principal to enable writing Cosmos DB SQL role assignments. |
+
 The script uses Azure CLI and GitHub CLI to:
 
 - register required Azure resource providers in the subscription
@@ -253,8 +285,7 @@ The browser then polls `GET /w2-processing/status/{correlationId}` until the
 agent-driven tool workflow persists `complete`.
 
 Python Function Apps use the v2 programming model with worker indexing enabled.
-The workflow requests Oryx remote build during Function deployment so Azure
-installs Python dependencies from `requirements.txt` before trigger sync.
+To ensure fast and predictable deployments, the workflow pre-installs Python dependencies locally on the GitHub Runner during the packaging phase using a compatible platform target (`manylinux2014_x86_64`) for Python 3.11. The self-contained zip file is then deployed directly to Azure without requiring remote build steps (Oryx remote build is disabled).
 
 ## Environments
 

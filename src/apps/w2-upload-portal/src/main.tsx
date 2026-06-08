@@ -207,7 +207,7 @@ function App() {
     const url = new URL(`${baseUrl}/${encodeURIComponent(correlationIdToPoll)}`);
     url.searchParams.set("tenantId", tenantId);
 
-    const maxAttempts = 30;
+    const maxAttempts = 60;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const statusResponse = await fetch(url.toString(), {
         method: "GET",

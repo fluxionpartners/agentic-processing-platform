@@ -20,7 +20,7 @@
       "post": {
         "operationId": "run_w_two_pipeline",
         "summary": "Run the complete W-2 pipeline.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/StartPipelineBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -28,7 +28,7 @@
       "post": {
         "operationId": "start_w_two_pipeline",
         "summary": "Create initial pipeline state.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/StartPipelineBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -36,7 +36,7 @@
       "post": {
         "operationId": "process_w_two_intake",
         "summary": "Process W-2 intake metadata.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -44,7 +44,7 @@
       "post": {
         "operationId": "extract_w_two_document",
         "summary": "Extract normalized W-2 facts.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -52,7 +52,7 @@
       "post": {
         "operationId": "validate_w_two_facts",
         "summary": "Validate extracted W-2 facts.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -60,7 +60,7 @@
       "post": {
         "operationId": "submit_w_two_human_review",
         "summary": "Route a flagged record to human review.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -68,7 +68,7 @@
       "post": {
         "operationId": "map_w_two_tax_facts",
         "summary": "Map W-2 facts to tax planning facts.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -76,7 +76,7 @@
       "post": {
         "operationId": "generate_form_ten_forty_document",
         "summary": "Generate a draft Form 1040 document artifact.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -84,7 +84,7 @@
       "post": {
         "operationId": "evaluate_w_two_compliance",
         "summary": "Evaluate compliance controls.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/PipelineStateBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -92,7 +92,7 @@
       "post": {
         "operationId": "persist_w_two_pipeline_checkpoint",
         "summary": "Persist a governed pipeline checkpoint.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/CheckpointBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -100,7 +100,7 @@
       "post": {
         "operationId": "persist_completed_w_two_pipeline",
         "summary": "Persist the completed governed pipeline state.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/CompletedPipelineBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     },
@@ -108,14 +108,123 @@
       "post": {
         "operationId": "get_runtime_configuration",
         "summary": "Return non-secret runtime configuration.",
-        "requestBody": {"$ref": "#/components/requestBodies/JsonToolPayload"},
+        "requestBody": {"$ref": "#/components/requestBodies/GenericPayloadBody"},
         "responses": {"200": {"$ref": "#/components/responses/ToolResult"}}
       }
     }
   },
   "components": {
+    "schemas": {
+      "StartPipelinePayload": {
+        "type": "object",
+        "required": ["tenantId", "taxpayerId", "documentName", "blobUri", "taxYear"],
+        "properties": {
+          "correlationId": {
+            "type": "string",
+            "description": "Optional unique correlation ID for traceability."
+          },
+          "tenantId": {
+            "type": "string",
+            "description": "Unique identifier of the tenant owner."
+          },
+          "taxpayerId": {
+            "type": "string",
+            "description": "Unique identifier of the taxpayer."
+          },
+          "documentName": {
+            "type": "string",
+            "description": "Original filename of the W-2 document."
+          },
+          "blobUri": {
+            "type": "string",
+            "description": "Secure Azure Blob storage URI of the uploaded document."
+          },
+          "taxYear": {
+            "type": "integer",
+            "description": "Tax year associated with the W-2 document."
+          },
+          "mockExtractionOverrides": {
+            "type": "object",
+            "description": "Optional mocked values to override extraction data."
+          }
+        },
+        "additionalProperties": true
+      },
+      "PipelineStatePayload": {
+        "type": "object",
+        "required": ["correlationId"],
+        "properties": {
+          "pipelineId": {"type": "string"},
+          "correlationId": {"type": "string"},
+          "tenantId": {"type": "string"},
+          "taxpayerId": {"type": "string"},
+          "documentName": {"type": "string"},
+          "blobUri": {"type": "string"},
+          "taxYear": {"type": "integer"},
+          "stage": {"type": "string"},
+          "status": {"type": "string"},
+          "intakeResult": {"type": "object"},
+          "extractionResult": {"type": "object"},
+          "validationResult": {"type": "object"},
+          "humanReviewResult": {"type": "object"},
+          "mappingResult": {"type": "object"},
+          "formGenerationResult": {"type": "object"},
+          "finalResult": {"type": "object"}
+        },
+        "additionalProperties": true
+      }
+    },
     "requestBodies": {
-      "JsonToolPayload": {
+      "StartPipelineBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StartPipelinePayload"
+            }
+          }
+        }
+      },
+      "PipelineStateBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PipelineStatePayload"
+            }
+          }
+        }
+      },
+      "CheckpointBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["state", "checkpointStage"],
+              "properties": {
+                "checkpointStage": {"type": "string"},
+                "state": {"$ref": "#/components/schemas/PipelineStatePayload"}
+              }
+            }
+          }
+        }
+      },
+      "CompletedPipelineBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["state"],
+              "properties": {
+                "state": {"$ref": "#/components/schemas/PipelineStatePayload"}
+              }
+            }
+          }
+        }
+      },
+      "GenericPayloadBody": {
         "required": true,
         "content": {
           "application/json": {
