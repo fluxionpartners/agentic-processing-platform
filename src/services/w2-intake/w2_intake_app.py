@@ -47,7 +47,7 @@ def upload_blob(blob_name: str, document_bytes: bytes) -> str:
 
 
 def publish_ingestion_event(payload: Dict[str, Any], blob_uri: str) -> str:
-    from azure.messaging.servicebus import ServiceBusClient, ServiceBusMessage
+    from azure.servicebus import ServiceBusClient, ServiceBusMessage
 
     correlation_id = payload.get("correlationId") or str(utc_now().timestamp())
     event_payload = {

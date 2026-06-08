@@ -11,6 +11,7 @@ binding documentation for the Agentic Processing Platform.
 | [Deploy Your Own Environment](deploy-your-own.md) | Setting up Azure and GitHub Actions for your own environment. |
 | [GitHub Actions Deployment](github-actions-deployment.md) | CI/CD workflow internals and deployment model. |
 | [Architecture](architecture.md) | Logical architecture, security boundaries, and component responsibilities. |
+| [End-to-End Debugging Flow](end-to-end-debugging-flow.md) | Step-by-step runtime and smoke-test debugging across APIM, Functions, Service Bus, Cosmos DB, and the portal. |
 | [W-2 Upload Portal](w2-upload-portal.md) | React upload portal, APIM facade, and deployed testing flow. |
 | [Foundry Tool Execution Flow](foundry-tool-execution-flow.md) | How Foundry tool calls reach the Python workers. |
 | [Agent-To-Agent vs Supervisor-With-Tools](agent-to-agent-vs-tools.md) | Why the current regulated pipeline uses tools and where A2A fits. |

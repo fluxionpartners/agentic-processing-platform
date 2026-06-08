@@ -13,6 +13,10 @@ param(
 
     [string]$BearerToken = "",
 
+    [string]$IntakeFunctionKey = "",
+
+    [string]$StatusFunctionKey = "",
+
     [int]$TimeoutSeconds = 180,
 
     [int]$PollIntervalSeconds = 5
@@ -72,6 +76,17 @@ if (-not [string]::IsNullOrWhiteSpace($BearerToken)) {
     $headers["Authorization"] = "Bearer $BearerToken"
 }
 
+$intakeHeaders = $headers.Clone()
+$statusHeaders = $headers.Clone()
+
+if (-not [string]::IsNullOrWhiteSpace($IntakeFunctionKey)) {
+    $intakeHeaders["x-functions-key"] = $IntakeFunctionKey
+}
+
+if (-not [string]::IsNullOrWhiteSpace($StatusFunctionKey)) {
+    $statusHeaders["x-functions-key"] = $StatusFunctionKey
+}
+
 Write-Host "Starting W-2 end-to-end smoke test"
 Write-Host "Correlation ID: $correlationId"
 
@@ -84,7 +99,7 @@ $intakePayload = @{
     documentBase64 = ConvertTo-Base64Utf8 -Value $syntheticW2
 }
 
-$intakeResponse = Invoke-JsonRequest -Method "POST" -Uri $IntakeApiUrl -Headers $headers -Body $intakePayload
+$intakeResponse = Invoke-JsonRequest -Method "POST" -Uri $IntakeApiUrl -Headers $intakeHeaders -Body $intakePayload
 
 if ($intakeResponse.status -ne "accepted") {
     throw "Expected intake status 'accepted' but received '$($intakeResponse.status)'."
@@ -105,7 +120,7 @@ $lastStatus = $null
 
 while ([DateTimeOffset]::UtcNow -lt $deadline) {
     try {
-        $lastStatus = Invoke-JsonRequest -Method "GET" -Uri $statusUrl -Headers $headers
+        $lastStatus = Invoke-JsonRequest -Method "GET" -Uri $statusUrl -Headers $statusHeaders
     }
     catch {
         Write-Host "Status poll failed: $($_.Exception.Message)"
