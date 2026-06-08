@@ -1,8 +1,12 @@
 import json
 import logging
+import os
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -29,6 +33,14 @@ ROUTE_TO_TOOL = {
     "persist-completed-w2-pipeline": "persist_completed_w2_pipeline",
     "get-runtime-configuration": "get_runtime_configuration",
 }
+
+FOUNDRY_API_VERSION = os.getenv("FOUNDRY_API_VERSION", "v1")
+FOUNDRY_PROJECT_ENDPOINT = os.getenv("FOUNDRY_PROJECT_ENDPOINT", "").strip().rstrip("/")
+FOUNDRY_SUPERVISOR_AGENT_ID = os.getenv("FOUNDRY_SUPERVISOR_AGENT_ID", "").strip()
+FOUNDRY_SUPERVISOR_AGENT_NAME = os.getenv(
+    "FOUNDRY_SUPERVISOR_AGENT_NAME",
+    "foundry-w2-tax-orchestrator",
+).strip()
 
 
 def parse_json_body(req: Any) -> Tuple[Dict[str, Any], str]:
@@ -145,3 +157,175 @@ def json_response(func_module: Any, payload: Dict[str, Any], status_code: int):
         status_code=status_code,
         mimetype="application/json",
     )
+
+
+def _foundry_access_token() -> str:
+    from azure.identity import DefaultAzureCredential
+
+    credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+    return credential.get_token("https://ai.azure.com/.default").token
+
+
+def _foundry_request(
+    method: str,
+    relative_path: str,
+    token: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if not FOUNDRY_PROJECT_ENDPOINT:
+        raise ValueError("FOUNDRY_PROJECT_ENDPOINT is not configured.")
+
+    separator = "&" if "?" in relative_path else "?"
+    url = f"{FOUNDRY_PROJECT_ENDPOINT}{relative_path}{separator}api-version={FOUNDRY_API_VERSION}"
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response_body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Foundry API request failed: {exc.code} {error_body}") from exc
+
+    return json.loads(response_body) if response_body else {}
+
+
+def _object_id(value: Dict[str, Any]) -> str:
+    return str(value.get("id") or value.get("assistant_id") or value.get("thread_id") or "").strip()
+
+
+def _resolve_supervisor_agent_id(token: str) -> str:
+    if FOUNDRY_SUPERVISOR_AGENT_ID:
+        return FOUNDRY_SUPERVISOR_AGENT_ID
+    if not FOUNDRY_SUPERVISOR_AGENT_NAME:
+        raise ValueError("FOUNDRY_SUPERVISOR_AGENT_ID or FOUNDRY_SUPERVISOR_AGENT_NAME must be configured.")
+
+    response = _foundry_request("GET", "/assistants", token)
+    candidates = response.get("data") if isinstance(response.get("data"), list) else response.get("value")
+    if not isinstance(candidates, list):
+        candidates = []
+
+    for candidate in candidates:
+        if isinstance(candidate, dict) and candidate.get("name") == FOUNDRY_SUPERVISOR_AGENT_NAME:
+            agent_id = _object_id(candidate)
+            if agent_id:
+                return agent_id
+
+    raise ValueError(f"Foundry supervisor agent was not found by name: {FOUNDRY_SUPERVISOR_AGENT_NAME}")
+
+
+def _build_agent_prompt(payload: Dict[str, Any]) -> str:
+    safe_payload = {
+        "correlationId": payload.get("correlationId"),
+        "tenantId": payload.get("tenantId"),
+        "taxpayerId": payload.get("taxpayerId"),
+        "documentName": payload.get("documentName"),
+        "blobUri": payload.get("blobUri"),
+        "taxYear": payload.get("taxYear"),
+        "executionMode": "foundry-agent",
+    }
+    return (
+        "Run the governed W-2 to draft Form 1040 workflow for this intake event. "
+        "Use the available W-2 tax pipeline tools, persist checkpoints, and return only the final status summary.\n\n"
+        f"Intake event JSON:\n{json.dumps(safe_payload, indent=2)}"
+    )
+
+
+def invoke_foundry_supervisor_agent(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+    required_fields = ["correlationId", "tenantId", "taxpayerId", "documentName", "blobUri"]
+    missing = [field for field in required_fields if not payload.get(field)]
+    if missing:
+        return {
+            "error": "invalid_request",
+            "message": f"Missing required fields: {', '.join(missing)}",
+        }, 400
+
+    try:
+        token = _foundry_access_token()
+        agent_id = _resolve_supervisor_agent_id(token)
+        thread = _foundry_request(
+            "POST",
+            "/threads",
+            token,
+            {
+                "metadata": {
+                    "correlationId": str(payload.get("correlationId")),
+                    "tenantId": str(payload.get("tenantId")),
+                    "executionMode": "foundry-agent",
+                }
+            },
+        )
+        thread_id = _object_id(thread)
+        if not thread_id:
+            raise RuntimeError("Foundry thread creation did not return an id.")
+
+        _foundry_request(
+            "POST",
+            f"/threads/{thread_id}/messages",
+            token,
+            {
+                "role": "user",
+                "content": _build_agent_prompt(payload),
+            },
+        )
+        run = _foundry_request(
+            "POST",
+            f"/threads/{thread_id}/runs",
+            token,
+            {
+                "assistant_id": agent_id,
+                "metadata": {
+                    "correlationId": str(payload.get("correlationId")),
+                    "tenantId": str(payload.get("tenantId")),
+                    "executionMode": "foundry-agent",
+                },
+            },
+        )
+        run_id = _object_id(run)
+        if not run_id:
+            raise RuntimeError("Foundry run creation did not return an id.")
+
+        run_status = str(run.get("status") or "").lower()
+        if bool(payload.get("waitForAgentRun")):
+            terminal_statuses = {"completed", "failed", "cancelled", "expired"}
+            deadline = time.time() + int(payload.get("agentRunTimeoutSeconds") or 120)
+            while run_status not in terminal_statuses and time.time() < deadline:
+                time.sleep(2)
+                run = _foundry_request("GET", f"/threads/{thread_id}/runs/{run_id}", token)
+                run_status = str(run.get("status") or "").lower()
+
+            if run_status != "completed":
+                return {
+                    "error": "foundry_agent_run_incomplete",
+                    "message": f"Foundry supervisor run ended with status '{run_status or 'unknown'}'.",
+                    "correlationId": payload.get("correlationId"),
+                    "threadId": thread_id,
+                    "runId": run_id,
+                    "runStatus": run_status,
+                }, 502
+
+        return {
+            "status": "accepted",
+            "executionMode": "foundry-agent",
+            "correlationId": payload.get("correlationId"),
+            "threadId": thread_id,
+            "runId": run_id,
+            "messageId": run_id,
+            "runStatus": run_status,
+            "agentName": FOUNDRY_SUPERVISOR_AGENT_NAME,
+        }, 202
+    except Exception as exc:
+        logging.exception("Foundry supervisor invocation failed.")
+        return {
+            "error": "foundry_agent_invocation_failed",
+            "message": str(exc),
+            "correlationId": payload.get("correlationId"),
+        }, 500

@@ -5,6 +5,11 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$StatusApiUrl,
 
+    [string]$AgentApiUrl = "",
+
+    [ValidateSet("direct", "foundry-agent")]
+    [string]$ExecutionMode = "direct",
+
     [string]$TenantId = "tenant-smoke",
 
     [string]$TaxpayerId = "taxpayer-smoke-001",
@@ -16,6 +21,8 @@ param(
     [string]$IntakeFunctionKey = "",
 
     [string]$StatusFunctionKey = "",
+
+    [string]$AgentFunctionKey = "",
 
     [int]$TimeoutSeconds = 180,
 
@@ -87,8 +94,13 @@ if (-not [string]::IsNullOrWhiteSpace($StatusFunctionKey)) {
     $statusHeaders["x-functions-key"] = $StatusFunctionKey
 }
 
+if ($ExecutionMode -eq "foundry-agent" -and [string]::IsNullOrWhiteSpace($AgentApiUrl)) {
+    throw "ExecutionMode is foundry-agent, but AgentApiUrl was not supplied."
+}
+
 Write-Host "Starting W-2 end-to-end smoke test"
 Write-Host "Correlation ID: $correlationId"
+Write-Host "Execution mode: $ExecutionMode"
 
 $intakePayload = @{
     correlationId = $correlationId
@@ -97,6 +109,7 @@ $intakePayload = @{
     documentName = $documentName
     taxYear = $TaxYear
     documentBase64 = ConvertTo-Base64Utf8 -Value $syntheticW2
+    executionMode = $ExecutionMode
 }
 
 $intakeResponse = Invoke-JsonRequest -Method "POST" -Uri $IntakeApiUrl -Headers $intakeHeaders -Body $intakePayload
@@ -107,6 +120,31 @@ if ($intakeResponse.status -ne "accepted") {
 
 if ([string]::IsNullOrWhiteSpace($intakeResponse.blobUri)) {
     throw "Intake response did not include blobUri."
+}
+
+if ($ExecutionMode -eq "foundry-agent") {
+    $agentHeaders = $headers.Clone()
+    if (-not [string]::IsNullOrWhiteSpace($AgentFunctionKey)) {
+        $agentHeaders["x-functions-key"] = $AgentFunctionKey
+    }
+
+    $agentPayload = @{
+        correlationId = $correlationId
+        tenantId = $TenantId
+        taxpayerId = $TaxpayerId
+        documentName = $documentName
+        taxYear = $TaxYear
+        blobUri = $intakeResponse.blobUri
+        executionMode = "foundry-agent"
+    }
+    $agentResponse = Invoke-JsonRequest -Method "POST" -Uri $AgentApiUrl -Headers $agentHeaders -Body $agentPayload
+    if ($agentResponse.status -ne "accepted") {
+        throw "Expected Foundry agent status 'accepted' but received '$($agentResponse.status)'."
+    }
+    if ([string]::IsNullOrWhiteSpace($agentResponse.runId)) {
+        throw "Foundry agent response did not include runId."
+    }
+    Write-Host "Foundry agent run accepted. Thread: $($agentResponse.threadId); Run: $($agentResponse.runId)"
 }
 
 Write-Host "Intake accepted. Polling pipeline status..."

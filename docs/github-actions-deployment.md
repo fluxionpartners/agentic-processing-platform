@@ -149,6 +149,8 @@ The bootstrap script configures these environment variables:
 - `FOUNDRY_PROJECT_NAME`, when supplied to bootstrap
 - `FOUNDRY_MODEL_DEPLOYMENT_NAME`, when supplied to bootstrap
 - `FOUNDRY_OPENAPI_CONNECTION_NAME`, when supplied to bootstrap
+- `FOUNDRY_SUPERVISOR_AGENT_NAME`, defaults to `foundry-w2-tax-orchestrator`
+- `PORTAL_EXECUTION_MODE`, defaults to `direct`
 
 The workflow also creates or reuses the configured resource group before
 deploying Bicep.
@@ -230,6 +232,26 @@ When upload portal authentication is enabled during bootstrap, the workflow also
 configures APIM `validate-jwt` with the portal API app audience and builds the
 React app with MSAL settings from GitHub Environment variables.
 
+The upload portal supports three execution-mode configurations:
+
+| Value | Portal behavior |
+| --- | --- |
+| `direct` | Upload stages the document and the intake Function publishes the Service Bus event. |
+| `foundry-agent` | Upload stages the document, then the portal calls the Foundry supervisor agent run endpoint. |
+| `selectable` | The portal shows a switch so testers can run either path from the same UI. |
+
+Set the mode during bootstrap with:
+
+```powershell
+-PortalExecutionMode selectable
+```
+
+In Foundry agent mode, APIM exposes `POST /w2-processing/agent-run`. The
+Foundry tools Function App uses managed identity to call the Foundry project,
+creates a supervisor thread/run, and returns the thread/run IDs immediately.
+The browser then polls `GET /w2-processing/status/{correlationId}` until the
+agent-driven tool workflow persists `complete`.
+
 Python Function Apps use the v2 programming model with worker indexing enabled.
 The workflow requests Oryx remote build during Function deployment so Azure
 installs Python dependencies from `requirements.txt` before trigger sync.
@@ -269,6 +291,13 @@ The workflow then resolves `src/services/foundry-tools/openapi.json` to the
 deployed `/api` endpoint, adds the matching OpenAPI security scheme, and
 registers the supervisor agent with an OpenAPI tool definition. The Function key
 is not stored in GitHub secrets, workflow inputs, or source control.
+
+After remote registration, the workflow captures the returned supervisor agent
+ID and writes it to the Foundry tools Function App setting
+`FOUNDRY_SUPERVISOR_AGENT_ID`. The tool host can fall back to resolving by
+`FOUNDRY_SUPERVISOR_AGENT_NAME`, but using the returned ID is the preferred
+runtime binding because it avoids ambiguity if multiple agents have similar
+names.
 
 If you already manage the connection outside this workflow, pass
 `foundry_openapi_connection_id` and the create/update step is skipped.
@@ -316,6 +345,7 @@ artifact storage, adds the Service Bus-triggered async processor, and exposes
 APIM processing endpoints:
 
 - `POST /w2-processing/run` for direct diagnostics and Foundry-style tool execution.
+- `POST /w2-processing/agent-run` for portal-triggered Foundry supervisor runs.
 - `GET /w2-processing/status/{correlationId}` for portal polling and smoke tests.
 
 Both Function Apps use the shared environment-level Log Analytics workspace and
@@ -418,3 +448,14 @@ OIDC service principal a smoke-test application role on the portal API app
 registration. During the workflow, GitHub Actions mints a short-lived access
 token for the APIM audience and uses that token for the smoke test. No reusable
 bearer token is stored in GitHub.
+
+For a local Foundry-agent smoke test after registration, use:
+
+```powershell
+.\scripts\azure\Test-W2EndToEndSmoke.ps1 `
+  -IntakeApiUrl "https://<apim-name>.azure-api.net/w2-intake/upload-w2" `
+  -AgentApiUrl "https://<apim-name>.azure-api.net/w2-processing/agent-run" `
+  -StatusApiUrl "https://<apim-name>.azure-api.net/w2-processing/status" `
+  -BearerToken $token `
+  -ExecutionMode foundry-agent
+```

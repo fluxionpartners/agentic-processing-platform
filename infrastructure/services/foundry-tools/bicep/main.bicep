@@ -38,6 +38,15 @@ param complianceMode string = 'development'
 @description('Azure OpenAI deployment name used by the Foundry supervisor agent')
 param azureOpenAIDeploymentName string = ''
 
+@description('Azure AI Foundry project endpoint used by the agent gateway.')
+param foundryProjectEndpoint string = ''
+
+@description('Optional Foundry supervisor agent ID. If empty, the gateway resolves by agent name.')
+param foundrySupervisorAgentId string = ''
+
+@description('Foundry supervisor agent name used when the ID is not configured.')
+param foundrySupervisorAgentName string = 'foundry-w2-tax-orchestrator'
+
 @description('Azure AI Document Intelligence endpoint')
 param documentIntelligenceEndpoint string = ''
 
@@ -267,6 +276,22 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'AZURE_OPENAI_DEPLOYMENT_NAME'
           value: azureOpenAIDeploymentName
+        }
+        {
+          name: 'FOUNDRY_PROJECT_ENDPOINT'
+          value: foundryProjectEndpoint
+        }
+        {
+          name: 'FOUNDRY_SUPERVISOR_AGENT_ID'
+          value: foundrySupervisorAgentId
+        }
+        {
+          name: 'FOUNDRY_SUPERVISOR_AGENT_NAME'
+          value: foundrySupervisorAgentName
+        }
+        {
+          name: 'FOUNDRY_API_VERSION'
+          value: 'v1'
         }
         {
           name: 'W2_EXTRACTION_MODE'
@@ -527,6 +552,55 @@ resource getW2PipelineStatusOperationPolicy 'Microsoft.ApiManagement/service/api
   }
 }
 
+resource invokeFoundryAgentOperation 'Microsoft.ApiManagement/service/apis/operations@2022-08-01' = {
+  parent: w2ProcessingApi
+  name: 'invoke-foundry-agent'
+  properties: {
+    displayName: 'Invoke Foundry Supervisor Agent'
+    method: 'POST'
+    urlTemplate: '/agent-run'
+    description: 'Invokes the registered Microsoft Foundry supervisor agent for a W-2 intake event.'
+    request: {
+      headers: [
+        {
+          name: 'Content-Type'
+          required: true
+          type: 'string'
+          defaultValue: 'application/json'
+        }
+      ]
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 202
+        description: 'Foundry supervisor agent run was created for the orchestration request.'
+      }
+      {
+        statusCode: 400
+        description: 'Invalid agent invocation request.'
+      }
+      {
+        statusCode: 500
+        description: 'Foundry agent invocation failed.'
+      }
+    ]
+  }
+}
+
+resource invokeFoundryAgentOperationPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2022-08-01' = {
+  parent: invokeFoundryAgentOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><cors allow-credentials="false"><allowed-origins>${apimCorsOrigins}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>Authorization</header><header>Content-Type</header><header>correlation-id</header></allowed-headers><expose-headers><header>correlation-id</header></expose-headers></cors>${portalJwtPolicy}<set-header name="x-functions-key" exists-action="override"><value>{{foundry-tools-function-key}}</value></set-header><rewrite-uri template="/invoke-foundry-agent" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
 output functionAppName string = functionApp.name
 output functionAppDefaultHostName string = functionApp.properties.defaultHostName
 output keyVaultName string = keyVault.name
@@ -539,6 +613,7 @@ output serviceBusConnectionStringSecretName string = serviceBusConnectionStringS
 output toolEndpointBaseUrl string = 'https://${functionApp.properties.defaultHostName}/api'
 output w2ProcessingApiUrl string = '${apiManagement.properties.gatewayUrl}/w2-processing/run'
 output w2PipelineStatusApiUrl string = '${apiManagement.properties.gatewayUrl}/w2-processing/status'
+output w2AgentApiUrl string = '${apiManagement.properties.gatewayUrl}/w2-processing/agent-run'
 
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, storageAccount.apiVersion).keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 var serviceBusConnectionString = listKeys(serviceBusAuthRule.id, serviceBusAuthRule.apiVersion).primaryConnectionString

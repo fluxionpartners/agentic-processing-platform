@@ -48,6 +48,7 @@ From the repository root:
   -FoundryProjectName "taxai-dev-project" `
   -FoundryModelDeploymentName "gpt-4o-mini-dev" `
   -FoundryOpenApiConnectionName "w2toolsfnkey" `
+  -PortalExecutionMode selectable `
   -GrantUserAccessAdministrator
 ```
 
@@ -72,6 +73,8 @@ The script creates or reuses:
   - `FOUNDRY_PROJECT_NAME`, when supplied
   - `FOUNDRY_MODEL_DEPLOYMENT_NAME`, when supplied
   - `FOUNDRY_OPENAPI_CONNECTION_NAME`, when supplied
+  - `FOUNDRY_SUPERVISOR_AGENT_NAME`
+  - `PORTAL_EXECUTION_MODE`
 
 The workflow uses OIDC federation, so no Azure client secret is stored in
 GitHub.
@@ -181,11 +184,19 @@ After deployment, review the GitHub Actions output for:
 - APIM W-2 processing API URL.
 
 Open the portal URL and submit the built-in synthetic W-2 first. A successful
-request returns `202 Accepted` with a blob URI, Service Bus message ID, and
-correlation ID. The Foundry tools Function App then consumes the Service Bus
-message, extracts W-2 facts, maps tax facts, generates a draft Form 1040
-artifact, and persists the governed result. The portal polls APIM for status
-until the pipeline reaches `complete`.
+request returns `202 Accepted` with a blob URI and correlation ID.
+
+If `PORTAL_EXECUTION_MODE` is `direct`, the intake Function also publishes a
+Service Bus message and the Foundry tools Function App consumes that event. If
+the mode is `foundry-agent`, the intake Function stages the blob only and the
+portal calls `POST /w2-processing/agent-run` through APIM. That endpoint creates
+a Foundry supervisor agent thread/run and returns the thread and run IDs while
+the agent continues calling the registered tools. If the mode is `selectable`,
+the portal lets you choose either path before submitting.
+
+Both paths extract W-2 facts, map tax facts, generate a draft Form 1040 artifact,
+and persist the governed result. The portal polls APIM for status until the
+pipeline reaches `complete`.
 See [W-2 Upload Portal](w2-upload-portal.md) for the detailed test flow.
 
 ## Production Notes

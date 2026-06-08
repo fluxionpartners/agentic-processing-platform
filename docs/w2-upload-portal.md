@@ -11,8 +11,10 @@ User browser
   -> API Management W2 Intake API
   -> W2 intake Function App
   -> Raw W2 Blob Storage
-  -> Service Bus ingestion event
-  -> Foundry tools Function App Service Bus trigger
+  -> direct mode: Service Bus ingestion event
+  -> agent mode: API Management W2 Agent Run API
+  -> agent mode: Foundry supervisor agent thread/run
+  -> Foundry tools Function App
   -> governed pipeline through draft Form 1040 generation
   -> Cosmos DB governed status record
   -> API Management W2 Processing Status API
@@ -22,6 +24,14 @@ User browser
 API Management injects backend Function keys through secret named values. The
 portal receives only APIM URLs and optional Entra SPA configuration at build
 time.
+
+The portal can be configured for three execution paths:
+
+| Mode | Behavior |
+| --- | --- |
+| `direct` | Intake publishes a Service Bus message and the tools host processes it asynchronously. |
+| `foundry-agent` | Intake stages the blob only, then the portal creates a Foundry supervisor agent run through APIM. |
+| `selectable` | The UI shows a segmented control so testers can run either path. |
 
 ## Security Model
 
@@ -92,6 +102,8 @@ npm install
 $env:VITE_W2_INTAKE_API_URL = "https://<apim-name>.azure-api.net/w2-intake/upload-w2"
 $env:VITE_W2_PROCESSING_API_URL = "https://<apim-name>.azure-api.net/w2-processing/run"
 $env:VITE_W2_STATUS_API_URL = "https://<apim-name>.azure-api.net/w2-processing/status"
+$env:VITE_W2_AGENT_API_URL = "https://<apim-name>.azure-api.net/w2-processing/agent-run"
+$env:VITE_W2_EXECUTION_MODE = "selectable"
 $env:VITE_AUTH_ENABLED = "false"
 npm run dev
 ```
@@ -111,14 +123,28 @@ Expected successful response:
   "status": "accepted",
   "blobUri": "https://...",
   "messageId": "...",
-  "correlationId": "portal-w2-..."
+  "correlationId": "portal-w2-...",
+  "executionMode": "direct"
+}
+```
+
+When Foundry agent mode is selected, the response also includes the created
+Foundry thread and run identifiers:
+
+```json
+{
+  "status": "accepted",
+  "executionMode": "foundry-agent",
+  "threadId": "thread_...",
+  "runId": "run_..."
 }
 ```
 
 Verify downstream resources:
 
 - Raw W-2 file in the `raw-w2` container.
-- Service Bus message consumed from `w2-ingestion-queue`.
+- Direct mode: Service Bus message consumed from `w2-ingestion-queue`.
+- Agent mode: Foundry supervisor thread/run visible in the Foundry project.
 - Pipeline status through the APIM `w2-processing/status/{correlationId}` operation.
 - Draft Form 1040 artifact in the configured artifact container.
 - Governed tax fact and artifact metadata record in Cosmos DB.

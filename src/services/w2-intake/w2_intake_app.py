@@ -70,6 +70,11 @@ def publish_ingestion_event(payload: Dict[str, Any], blob_uri: str) -> str:
             return message.message_id
 
 
+def should_publish_ingestion_event(payload: Dict[str, Any]) -> bool:
+    execution_mode = str(payload.get("executionMode") or "direct").strip().lower()
+    return execution_mode not in {"foundry-agent", "agent", "supervisor-agent"}
+
+
 def main(req):
     import azure.functions as func
 
@@ -101,7 +106,7 @@ def main(req):
     blob_name = build_blob_name(payload)
     try:
         blob_uri = upload_blob(blob_name, document_bytes)
-        message_id = publish_ingestion_event(payload, blob_uri)
+        message_id = publish_ingestion_event(payload, blob_uri) if should_publish_ingestion_event(payload) else ""
     except Exception as exc:
         logging.exception("Ingestion failed.")
         return func.HttpResponse(f"Failed to ingest document: {str(exc)}", status_code=500)
@@ -111,6 +116,7 @@ def main(req):
         "blobUri": blob_uri,
         "messageId": message_id,
         "correlationId": payload.get("correlationId"),
+        "executionMode": payload.get("executionMode") or "direct",
     }
 
     logging.info("W-2 ingestion accepted: %s", blob_uri)

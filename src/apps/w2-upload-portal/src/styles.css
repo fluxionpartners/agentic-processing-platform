@@ -233,6 +233,58 @@ h2 {
   padding: 7px 10px;
 }
 
+.mode-row {
+  align-items: center;
+  background: #f7fbfd;
+  border: 1px solid #dcebf2;
+  border-radius: 8px;
+  color: #314052;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: -2px 0 18px;
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+}
+
+.mode-row > span {
+  align-items: center;
+  color: #356f8d;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 760;
+  gap: 7px;
+}
+
+.mode-row > strong {
+  color: #172033;
+  font-size: 0.84rem;
+}
+
+.segmented-control {
+  background: #ffffff;
+  border: 1px solid #cbdde8;
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+}
+
+.segmented-control button {
+  background: transparent;
+  border-radius: 999px;
+  box-shadow: none;
+  color: #385269;
+  font-size: 0.76rem;
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+.segmented-control button.active {
+  background: #3a7ea0;
+  color: #ffffff;
+}
+
 .field-grid {
   display: grid;
   gap: 14px;

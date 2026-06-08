@@ -14,6 +14,7 @@ import {
   Radio,
   ShieldCheck,
   Sparkles,
+  Workflow,
   UploadCloud
 } from "lucide-react";
 import "./styles.css";
@@ -23,6 +24,9 @@ type IntakeResponse = {
   blobUri?: string;
   messageId?: string;
   correlationId?: string;
+  executionMode?: string;
+  threadId?: string;
+  runId?: string;
 };
 
 type PipelineResponse = {
@@ -40,9 +44,12 @@ type PipelineResponse = {
 };
 
 type UploadState = "idle" | "uploading" | "processing" | "success" | "error";
+type ExecutionMode = "direct" | "foundry-agent";
 
 const intakeApiUrl = import.meta.env.VITE_W2_INTAKE_API_URL as string | undefined;
 const statusApiUrl = import.meta.env.VITE_W2_STATUS_API_URL as string | undefined;
+const agentApiUrl = import.meta.env.VITE_W2_AGENT_API_URL as string | undefined;
+const configuredExecutionMode = (import.meta.env.VITE_W2_EXECUTION_MODE ?? "direct") as string;
 const authEnabled = import.meta.env.VITE_AUTH_ENABLED === "true";
 const authTenantId = import.meta.env.VITE_AUTH_TENANT_ID as string | undefined;
 const authClientId = import.meta.env.VITE_AUTH_CLIENT_ID as string | undefined;
@@ -165,6 +172,9 @@ function App() {
   const [pipelineResponse, setPipelineResponse] = useState<PipelineResponse | null>(null);
   const [error, setError] = useState("");
   const [signedInAccount, setSignedInAccount] = useState<AccountInfo | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(
+    configuredExecutionMode === "foundry-agent" ? "foundry-agent" : "direct"
+  );
 
   const correlationId = useMemo(() => {
     const suffix = crypto.randomUUID?.() ?? `${Date.now()}`;
@@ -173,8 +183,16 @@ function App() {
 
   const formGenerationResult = nestedRecord(pipelineResponse?.form1040Document);
   const form1040Artifact = nestedRecord(formGenerationResult?.artifact);
+  const allowExecutionModeChoice = configuredExecutionMode === "selectable";
+  const isAgentMode = executionMode === "foundry-agent";
   const canSubmit = Boolean(
-    intakeApiUrl && statusApiUrl && tenantId && taxpayerId && taxYear && documentName
+    intakeApiUrl &&
+      statusApiUrl &&
+      (!isAgentMode || agentApiUrl) &&
+      tenantId &&
+      taxpayerId &&
+      taxYear &&
+      documentName
   );
 
   async function pollPipelineStatus(
@@ -255,7 +273,8 @@ function App() {
           taxpayerId,
           documentName,
           taxYear: Number(taxYear),
-          documentBase64
+          documentBase64,
+          executionMode
         })
       });
 
@@ -266,10 +285,46 @@ function App() {
         throw new Error(typeof parsed === "string" ? parsed : parsed.message ?? text);
       }
 
-      setResponse(parsed);
+      let acceptedResponse = parsed;
+      setResponse(acceptedResponse);
       setStatus("processing");
 
-      await pollPipelineStatus(parsed.correlationId ?? correlationId, headers);
+      if (isAgentMode) {
+        if (!agentApiUrl) {
+          throw new Error("Portal agent API configuration is incomplete.");
+        }
+        const agentResponse = await fetch(agentApiUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            correlationId: parsed.correlationId ?? correlationId,
+            tenantId,
+            taxpayerId,
+            documentName,
+            taxYear: Number(taxYear),
+            blobUri: parsed.blobUri,
+            executionMode
+          })
+        });
+        const agentText = await agentResponse.text();
+        const agentPayload = agentText ? JSON.parse(agentText) : {};
+        if (!agentResponse.ok) {
+          throw new Error(
+            typeof agentPayload === "string"
+              ? agentPayload
+              : agentPayload.message ?? agentText
+          );
+        }
+        acceptedResponse = {
+          ...acceptedResponse,
+          ...agentPayload,
+          status: parsed.status ?? agentPayload.status,
+          messageId: agentPayload.messageId ?? parsed.messageId
+        };
+        setResponse(acceptedResponse);
+      }
+
+      await pollPipelineStatus(acceptedResponse.correlationId ?? correlationId, headers);
       setStatus("success");
     } catch (caught) {
       setStatus("error");
@@ -351,6 +406,33 @@ function App() {
             </div>
           </div>
 
+          <div className="mode-row" aria-label="Execution mode">
+            <span>
+              <Workflow size={16} />
+              Execution path
+            </span>
+            {allowExecutionModeChoice ? (
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={executionMode === "direct" ? "active" : ""}
+                  onClick={() => setExecutionMode("direct")}
+                >
+                  Backend
+                </button>
+                <button
+                  type="button"
+                  className={executionMode === "foundry-agent" ? "active" : ""}
+                  onClick={() => setExecutionMode("foundry-agent")}
+                >
+                  Foundry Agent
+                </button>
+              </div>
+            ) : (
+              <strong>{isAgentMode ? "Foundry Agent" : "Backend"}</strong>
+            )}
+          </div>
+
           <div className="field-grid">
             <label>
               Tenant ID
@@ -397,10 +479,10 @@ function App() {
             {status === "processing" ? "Running Pipeline" : "Submit to Intake"}
           </button>
 
-          {(!intakeApiUrl || !statusApiUrl) && (
+          {(!intakeApiUrl || !statusApiUrl || (isAgentMode && !agentApiUrl)) && (
             <p className="warning">
               <AlertCircle size={16} />
-              Configure intake and status API URLs before submitting to Azure.
+              Configure intake, status, and agent API URLs before submitting to Azure.
             </p>
           )}
 
@@ -434,7 +516,14 @@ function App() {
               Submitted through API Management
             </li>
             <li className={response ? "done" : ""}>Accepted by W-2 intake Function</li>
-            <li className={response ? "done" : ""}>Blob + Service Bus event created</li>
+            <li className={response ? "done" : ""}>
+              {isAgentMode ? "Blob staged for agent orchestration" : "Blob + Service Bus event created"}
+            </li>
+            {isAgentMode && (
+              <li className={response?.runId ? "done" : ""}>
+                Foundry supervisor agent run created
+              </li>
+            )}
             <li className={pipelineResponse?.extraction?.status ? "done" : ""}>
               W-2 facts extracted
             </li>
@@ -455,8 +544,11 @@ function App() {
           {status === "success" && response && (
             <div className="response-card success">
               <p>Status: {response.status}</p>
+              <p>Execution: {isAgentMode ? "Foundry Agent" : "Backend"}</p>
               <p>Correlation: {response.correlationId}</p>
               <p>Message ID: {response.messageId}</p>
+              {response.threadId && <p>Foundry Thread: {response.threadId}</p>}
+              {response.runId && <p>Foundry Run: {response.runId}</p>}
               <p className="wrap">Blob: {response.blobUri}</p>
               {pipelineResponse?.status && <p>Pipeline: {String(pipelineResponse.status)}</p>}
               {form1040Artifact?.blobName && (
@@ -481,6 +573,7 @@ function App() {
         <div className="delivery-steps">
           <span>Portal</span>
           <span>API Management</span>
+          {isAgentMode && <span>Foundry Agent</span>}
           <span>Function App</span>
           <span>Service Bus</span>
           <span>Foundry tools</span>

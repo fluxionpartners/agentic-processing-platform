@@ -244,4 +244,19 @@ if ($responseObject.name -and $responseObject.name -ne $agentName) {
     throw "Foundry returned agent name '$($responseObject.name)' but the manifest requested '$agentName'."
 }
 
+$agentId = ""
+if ($responseObject.id) {
+    $agentId = [string]$responseObject.id
+}
+elseif ($responseObject.assistant_id) {
+    $agentId = [string]$responseObject.assistant_id
+}
+
+if ($agentId -and $env:GITHUB_OUTPUT) {
+    "foundry_supervisor_agent_id=$agentId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+}
+
 Write-Host "Registered Foundry supervisor agent: $agentName"
+if ($agentId) {
+    Write-Host "Registered Foundry supervisor agent ID: $agentId"
+}

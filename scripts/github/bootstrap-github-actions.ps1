@@ -31,6 +31,8 @@ param(
 
     [string]$FoundryOpenApiConnectionName = "w2toolsfnkey",
 
+    [string]$FoundrySupervisorAgentName = "foundry-w2-tax-orchestrator",
+
     [string]$FoundryProjectRoleName = "Foundry Project Manager",
 
     [switch]$ProvisionFoundry,
@@ -49,6 +51,9 @@ param(
     [switch]$SkipFoundryModelDeployment,
 
     [switch]$EnableUploadPortalAuthentication,
+
+    [ValidateSet("direct", "foundry-agent", "selectable")]
+    [string]$PortalExecutionMode = "direct",
 
     [string[]]$UploadPortalRedirectUris = @("http://localhost:5173"),
 
@@ -554,6 +559,10 @@ if ($FoundryModelDeploymentName) {
 if ($FoundryOpenApiConnectionName) {
     gh variable set FOUNDRY_OPENAPI_CONNECTION_NAME --env $Environment --body $FoundryOpenApiConnectionName
 }
+if ($FoundrySupervisorAgentName) {
+    gh variable set FOUNDRY_SUPERVISOR_AGENT_NAME --env $Environment --body $FoundrySupervisorAgentName
+}
+gh variable set PORTAL_EXECUTION_MODE --env $Environment --body $PortalExecutionMode
 if ($portalAuthResult) {
     gh variable set PORTAL_AUTH_ENABLED --env $Environment --body "true"
     gh variable set PORTAL_AUTH_TENANT_ID --env $Environment --body $portalAuthResult.tenantId
@@ -567,11 +576,12 @@ Write-Host "GitHub Actions bootstrap complete."
 Write-Host "Configured environment secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID"
 Write-Host "Configured environment variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NAME_PREFIX"
 if ($FoundryProjectEndpoint -or $FoundryAccountName -or $FoundryProjectName -or $FoundryModelDeploymentName -or $FoundryOpenApiConnectionName) {
-    Write-Host "Configured Foundry variables when provided: FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_ACCOUNT_NAME, FOUNDRY_PROJECT_NAME, FOUNDRY_MODEL_DEPLOYMENT_NAME, FOUNDRY_OPENAPI_CONNECTION_NAME"
+    Write-Host "Configured Foundry variables when provided: FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_ACCOUNT_NAME, FOUNDRY_PROJECT_NAME, FOUNDRY_MODEL_DEPLOYMENT_NAME, FOUNDRY_OPENAPI_CONNECTION_NAME, FOUNDRY_SUPERVISOR_AGENT_NAME"
     if ($FoundryAccountName -and $FoundryProjectName) {
         Write-Host "Configured Foundry project RBAC for the GitHub Actions service principal: $FoundryProjectRoleName"
     }
 }
+Write-Host "Configured portal execution mode variable: PORTAL_EXECUTION_MODE=$PortalExecutionMode"
 if ($portalAuthResult) {
     Write-Host "Configured upload portal authentication variables: PORTAL_AUTH_ENABLED, PORTAL_AUTH_TENANT_ID, PORTAL_AUTH_CLIENT_ID, PORTAL_AUTH_SCOPE, PORTAL_AUTH_AUDIENCE"
 }

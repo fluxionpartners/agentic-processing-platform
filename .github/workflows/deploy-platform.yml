@@ -89,6 +89,9 @@ env:
   FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ inputs.foundry_model_deployment_name || vars.FOUNDRY_MODEL_DEPLOYMENT_NAME || '' }}
   FOUNDRY_OPENAPI_CONNECTION_ID: ${{ inputs.foundry_openapi_connection_id || vars.FOUNDRY_OPENAPI_CONNECTION_ID || '' }}
   FOUNDRY_OPENAPI_CONNECTION_NAME: ${{ inputs.foundry_openapi_connection_name || vars.FOUNDRY_OPENAPI_CONNECTION_NAME || 'w2toolsfnkey' }}
+  FOUNDRY_SUPERVISOR_AGENT_ID: ${{ vars.FOUNDRY_SUPERVISOR_AGENT_ID || '' }}
+  FOUNDRY_SUPERVISOR_AGENT_NAME: ${{ vars.FOUNDRY_SUPERVISOR_AGENT_NAME || 'foundry-w2-tax-orchestrator' }}
+  PORTAL_EXECUTION_MODE: ${{ vars.PORTAL_EXECUTION_MODE || 'direct' }}
   PORTAL_AUTH_ENABLED: ${{ vars.PORTAL_AUTH_ENABLED || 'false' }}
   PORTAL_AUTH_TENANT_ID: ${{ vars.PORTAL_AUTH_TENANT_ID || '' }}
   PORTAL_AUTH_CLIENT_ID: ${{ vars.PORTAL_AUTH_CLIENT_ID || '' }}
@@ -143,7 +146,7 @@ jobs:
           set -euo pipefail
           pushd src/apps/w2-upload-portal
           npm install
-          VITE_W2_INTAKE_API_URL="https://example.azure-api.net/w2-intake/upload-w2" VITE_W2_PROCESSING_API_URL="https://example.azure-api.net/w2-processing/run" VITE_W2_STATUS_API_URL="https://example.azure-api.net/w2-processing/status" npm run build
+          VITE_W2_INTAKE_API_URL="https://example.azure-api.net/w2-intake/upload-w2" VITE_W2_PROCESSING_API_URL="https://example.azure-api.net/w2-processing/run" VITE_W2_STATUS_API_URL="https://example.azure-api.net/w2-processing/status" VITE_W2_AGENT_API_URL="https://example.azure-api.net/w2-processing/agent-run" VITE_W2_EXECUTION_MODE="selectable" npm run build
           popd
 
   package-w2-intake:
@@ -259,6 +262,7 @@ jobs:
       foundry_tools_endpoint_base_url: ${{ steps.deploy_foundry_tools.outputs.tool_endpoint_base_url }}
       w2_processing_api_url: ${{ steps.deploy_foundry_tools.outputs.w2_processing_api_url }}
       w2_pipeline_status_api_url: ${{ steps.deploy_foundry_tools.outputs.w2_pipeline_status_api_url }}
+      w2_agent_api_url: ${{ steps.deploy_foundry_tools.outputs.w2_agent_api_url }}
 
     steps:
       - name: Checkout
@@ -359,6 +363,9 @@ jobs:
               portalWebEndpoint="${{ steps.deploy_w2_intake.outputs.portal_web_endpoint }}" \
               serviceBusName="${{ steps.deploy_w2_intake.outputs.service_bus_name }}" \
               serviceBusQueueName="${{ steps.deploy_w2_intake.outputs.service_bus_queue_name }}" \
+              foundryProjectEndpoint="${{ env.FOUNDRY_PROJECT_ENDPOINT }}" \
+              foundrySupervisorAgentId="${{ env.FOUNDRY_SUPERVISOR_AGENT_ID }}" \
+              foundrySupervisorAgentName="${{ env.FOUNDRY_SUPERVISOR_AGENT_NAME }}" \
               portalAuthEnabled="${{ env.PORTAL_AUTH_ENABLED }}" \
               portalAuthTenantId="${{ env.PORTAL_AUTH_TENANT_ID }}" \
               portalAuthAudience="${{ env.PORTAL_AUTH_AUDIENCE }}" \
@@ -368,11 +375,13 @@ jobs:
           tool_endpoint_base_url="$(echo "${deployment_output}" | jq -r '.toolEndpointBaseUrl.value')"
           w2_processing_api_url="$(echo "${deployment_output}" | jq -r '.w2ProcessingApiUrl.value')"
           w2_pipeline_status_api_url="$(echo "${deployment_output}" | jq -r '.w2PipelineStatusApiUrl.value')"
+          w2_agent_api_url="$(echo "${deployment_output}" | jq -r '.w2AgentApiUrl.value')"
           for required_output in \
             "${function_app_name}" \
             "${tool_endpoint_base_url}" \
             "${w2_processing_api_url}" \
-            "${w2_pipeline_status_api_url}"; do
+            "${w2_pipeline_status_api_url}" \
+            "${w2_agent_api_url}"; do
             if [[ -z "${required_output}" || "${required_output}" == "null" ]]; then
               echo "A required Foundry tools deployment output was empty." >&2
               exit 1
@@ -382,6 +391,37 @@ jobs:
           echo "tool_endpoint_base_url=${tool_endpoint_base_url}" >> "${GITHUB_OUTPUT}"
           echo "w2_processing_api_url=${w2_processing_api_url}" >> "${GITHUB_OUTPUT}"
           echo "w2_pipeline_status_api_url=${w2_pipeline_status_api_url}" >> "${GITHUB_OUTPUT}"
+          echo "w2_agent_api_url=${w2_agent_api_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Grant tool host Foundry project access
+        if: ${{ env.FOUNDRY_ACCOUNT_NAME != '' && env.FOUNDRY_PROJECT_NAME != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          principal_id="$(az functionapp identity show \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ steps.deploy_foundry_tools.outputs.function_app_name }}" \
+            --query principalId \
+            --output tsv)"
+          if [[ -z "${principal_id}" ]]; then
+            echo "Foundry tools Function App managed identity was not found." >&2
+            exit 1
+          fi
+          project_scope="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ vars.AZURE_RESOURCE_GROUP }}/providers/Microsoft.CognitiveServices/accounts/${{ env.FOUNDRY_ACCOUNT_NAME }}/projects/${{ env.FOUNDRY_PROJECT_NAME }}"
+          existing_assignment="$(az role assignment list \
+            --assignee "${principal_id}" \
+            --role "Foundry Project Manager" \
+            --scope "${project_scope}" \
+            --query "[0].id" \
+            --output tsv)"
+          if [[ -z "${existing_assignment}" ]]; then
+            az role assignment create \
+              --assignee-object-id "${principal_id}" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Foundry Project Manager" \
+              --scope "${project_scope}" \
+              --only-show-errors
+          fi
 
   deploy-w2-intake:
     name: Deploy W2 Intake Function App
@@ -409,8 +449,8 @@ jobs:
         with:
           app-name: ${{ needs.deploy-infrastructure.outputs.w2_intake_function_app_name }}
           package: artifacts/w2-intake.zip
-          scm-do-build-during-deployment: true
-          enable-oryx-build: true
+          #scm-do-build-during-deployment: true
+          #enable-oryx-build: true
 
   deploy-foundry-tools:
     name: Deploy Foundry Tool Host
@@ -438,8 +478,8 @@ jobs:
         with:
           app-name: ${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}
           package: artifacts/foundry-tools.zip
-          scm-do-build-during-deployment: true
-          enable-oryx-build: true
+          #scm-do-build-during-deployment: true
+          #enable-oryx-build: true
 
   deploy-upload-portal:
     name: Deploy W2 Upload Portal
@@ -473,6 +513,8 @@ jobs:
           VITE_W2_INTAKE_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_intake_api_url }}
           VITE_W2_PROCESSING_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_processing_api_url }}
           VITE_W2_STATUS_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_pipeline_status_api_url }}
+          VITE_W2_AGENT_API_URL: ${{ needs.deploy-infrastructure.outputs.w2_agent_api_url }}
+          VITE_W2_EXECUTION_MODE: ${{ env.PORTAL_EXECUTION_MODE }}
           VITE_AUTH_ENABLED: ${{ env.PORTAL_AUTH_ENABLED }}
           VITE_AUTH_TENANT_ID: ${{ env.PORTAL_AUTH_TENANT_ID }}
           VITE_AUTH_CLIENT_ID: ${{ env.PORTAL_AUTH_CLIENT_ID }}
@@ -573,6 +615,7 @@ jobs:
             -OutputDirectory "artifacts/foundry-registration"
 
       - name: Register Foundry supervisor agent
+        id: register_foundry_agent
         shell: pwsh
         run: |
           $registrationArgs = @{
@@ -594,6 +637,19 @@ jobs:
           $registrationArgs["OpenApiProjectConnectionId"] = $connectionId
 
           ./scripts/foundry/Register-FoundryAgent.ps1 @registrationArgs
+
+      - name: Update tool host supervisor agent settings
+        if: ${{ inputs.prepare_foundry_registration_only == false && steps.register_foundry_agent.outputs.foundry_supervisor_agent_id != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az functionapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ needs.deploy-infrastructure.outputs.foundry_tools_function_app_name }}" \
+            --settings \
+              FOUNDRY_SUPERVISOR_AGENT_ID="${{ steps.register_foundry_agent.outputs.foundry_supervisor_agent_id }}" \
+              FOUNDRY_SUPERVISOR_AGENT_NAME="${{ env.FOUNDRY_SUPERVISOR_AGENT_NAME }}" \
+            --only-show-errors
 
       - name: Upload Foundry registration artifacts
         uses: actions/upload-artifact@v4

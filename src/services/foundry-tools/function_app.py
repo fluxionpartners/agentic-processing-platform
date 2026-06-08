@@ -5,6 +5,7 @@ import azure.functions as func
 from foundry_tools_app import (
     execute_tool,
     get_pipeline_status,
+    invoke_foundry_supervisor_agent,
     json_response,
     parse_json_body,
     process_service_bus_event,
@@ -33,6 +34,16 @@ def get_w2_pipeline_status(req: func.HttpRequest) -> func.HttpResponse:
     correlation_id = req.route_params.get("correlationId", "")
     tenant_id = req.params.get("tenantId", "")
     result, status_code = get_pipeline_status(correlation_id, tenant_id)
+    return json_response(func, result, status_code)
+
+
+@app.route(route="invoke-foundry-agent", methods=["POST"])
+def invoke_foundry_agent(req: func.HttpRequest) -> func.HttpResponse:
+    payload, error = parse_json_body(req)
+    if error:
+        return json_response(func, {"error": "invalid_request", "message": error}, 400)
+
+    result, status_code = invoke_foundry_supervisor_agent(payload)
     return json_response(func, result, status_code)
 
 

@@ -18,6 +18,7 @@ sequenceDiagram
     participant Intake as W2 Intake Function
     participant Storage as Blob Storage
     participant SB as Service Bus Queue
+    participant Agent as Foundry Supervisor Agent
     participant Tools as Foundry Tools Function
     participant Pipeline as Agent Pipeline
     participant Cosmos as Cosmos DB
@@ -35,7 +36,7 @@ sequenceDiagram
     Bicep-->>Dev: Return Function, APIM, and portal outputs
 
     Dev->>Bicep: Deploy Foundry tools infrastructure
-    Bicep->>APIM: Create /w2-processing/run and /status
+    Bicep->>APIM: Create /w2-processing/run, /agent-run, and /status
     Bicep->>Tools: Create Foundry tools Function App
     Bicep->>Artifact: Create draft 1040 artifact container
     Bicep-->>Dev: Return tool host and status API outputs
@@ -59,14 +60,30 @@ sequenceDiagram
     APIM->>Intake: Inject backend Function key
     APIM->>Intake: Forward upload request
     Intake->>Storage: Save uploaded W2 document
-    Intake->>SB: Publish W2DocumentUploaded event
+    alt Backend execution mode
+      Intake->>SB: Publish W2DocumentUploaded event
+    else Foundry agent execution mode
+      Intake->>Intake: Stage blob only and skip Service Bus publish
+    end
     Intake-->>APIM: Return accepted response
     APIM-->>Portal: Return correlationId
+    opt Foundry agent execution mode
+      Portal->>APIM: POST /w2-processing/agent-run
+      APIM->>Entra: Validate JWT
+      APIM->>Tools: Inject backend Function key
+      Tools->>Agent: Create thread, message, and run
+      Agent-->>Tools: Return threadId and runId
+      Tools-->>Portal: Return accepted agent run
+    end
     end
 
     rect rgb(247,250,252)
     note over SB,Cosmos: 4. Async processing path
-    SB->>Tools: Trigger Service Bus function
+    alt Backend execution mode
+      SB->>Tools: Trigger Service Bus function
+    else Foundry agent execution mode
+      Agent->>Tools: Call OpenAPI tools
+    end
     Tools->>Cosmos: Write processing checkpoint
     Tools->>Pipeline: Run governed orchestration
     Pipeline->>Pipeline: Intake agent normalizes request
@@ -128,6 +145,25 @@ sequenceDiagram
       Cosmos-->>Tools: Current state
       Tools-->>GHA: processing or complete
     end
+```
+
+## Foundry Agent Smoke Test
+
+After the supervisor agent is registered and the Foundry tools Function App
+managed identity has `Foundry Project Manager` on the Foundry project, the same
+smoke script can prove the agent path. In this mode the intake API stages the
+blob but does not publish the Service Bus event; the agent run drives the tool
+execution and the script polls the same persisted status endpoint.
+
+```powershell
+.\scripts\azure\Test-W2EndToEndSmoke.ps1 `
+  -IntakeApiUrl "https://<apim-name>.azure-api.net/w2-intake/upload-w2" `
+  -AgentApiUrl "https://<apim-name>.azure-api.net/w2-processing/agent-run" `
+  -StatusApiUrl "https://<apim-name>.azure-api.net/w2-processing/status" `
+  -BearerToken $token `
+  -ExecutionMode foundry-agent `
+  -TimeoutSeconds 300 `
+  -PollIntervalSeconds 5
 ```
 
 ## Local Direct Smoke Test
@@ -210,4 +246,3 @@ $token = az account get-access-token `
 5. Run APIM smoke test with Entra token.
 6. Run GitHub Actions workflow manually.
 7. Use Cosmos checkpoints to identify the last completed pipeline stage.
-
