@@ -167,6 +167,10 @@ jobs:
           cp -R src/services/w2-intake/. build/w2-intake/
           python -m pip install \
             --upgrade \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --implementation cp \
+            --python-version 3.11 \
             --target build/w2-intake/.python_packages/lib/site-packages \
             -r src/services/w2-intake/requirements.txt
           find build/w2-intake -type d -name "__pycache__" -prune -exec rm -rf {} +
@@ -228,6 +232,10 @@ jobs:
           cp -R src/foundry_agents build/foundry-tools/foundry_agents
           python -m pip install \
             --upgrade \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --implementation cp \
+            --python-version 3.11 \
             --target build/foundry-tools/.python_packages/lib/site-packages \
             -r src/services/foundry-tools/requirements.txt
           find build/foundry-tools -type d -name "__pycache__" -prune -exec rm -rf {} +

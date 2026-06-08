@@ -214,7 +214,12 @@ function App() {
         headers
       });
       const statusText = await statusResponse.text();
-      const statusPayload = statusText ? JSON.parse(statusText) : {};
+      let statusPayload;
+      try {
+        statusPayload = statusText ? JSON.parse(statusText) : {};
+      } catch {
+        statusPayload = statusText;
+      }
 
       if (!statusResponse.ok && statusResponse.status !== 202) {
         throw new Error(
@@ -279,7 +284,12 @@ function App() {
       });
 
       const text = await uploadResponse.text();
-      const parsed = text ? JSON.parse(text) : {};
+      let parsed;
+      try {
+        parsed = text ? JSON.parse(text) : {};
+      } catch {
+        parsed = text;
+      }
 
       if (!uploadResponse.ok) {
         throw new Error(typeof parsed === "string" ? parsed : parsed.message ?? text);
@@ -307,7 +317,12 @@ function App() {
           })
         });
         const agentText = await agentResponse.text();
-        const agentPayload = agentText ? JSON.parse(agentText) : {};
+        let agentPayload;
+        try {
+          agentPayload = agentText ? JSON.parse(agentText) : {};
+        } catch {
+          agentPayload = agentText;
+        }
         if (!agentResponse.ok) {
           throw new Error(
             typeof agentPayload === "string"
