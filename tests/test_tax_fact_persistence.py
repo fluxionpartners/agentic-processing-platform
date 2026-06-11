@@ -15,6 +15,7 @@ from foundry_agents.config import (
     TAX_FACT_PERSISTENCE_LOCAL_JSON,
 )
 from foundry_agents.pipeline import AgentPipeline
+from foundry_agents.utils.azure_mock import MockAgentsOperations
 from foundry_agents.persistence.store import (
     CosmosTaxFactStore,
     LocalJsonTaxFactStore,
@@ -63,6 +64,7 @@ class TaxFactPersistenceTests(unittest.TestCase):
                 sys.modules.pop(mod_name, None)
 
     def setUp(self):
+        MockAgentsOperations.reset()
         CosmosTaxFactStore._client_cache.clear()
         self.mock_cosmos.CosmosClient.reset_mock()
         self.mock_identity.DefaultAzureCredential.reset_mock()
@@ -99,8 +101,9 @@ class TaxFactPersistenceTests(unittest.TestCase):
             persistence_result = result["payload"]["persistenceResult"]
             saved_record = json.loads(Path(persistence_result["path"]).read_text(encoding="utf-8"))
             checkpoint_stages = [
-                checkpoint["checkpointStage"]
-                for checkpoint in result["payload"]["persistenceCheckpoints"]
+                entry["stage"]
+                for entry in result["payload"]["execution_log"]
+                if entry["stage"] in ["intake", "extraction", "validation", "tax_mapping", "form_generation", "compliance"]
             ]
 
         self.assertEqual(persistence_result["persistenceStatus"], "saved")

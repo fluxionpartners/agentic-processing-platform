@@ -208,6 +208,7 @@ def build_tax_fact_record(
         "taxYear": pipeline_state.get("taxYear") or extracted_data.get("taxYear"),
         "correlationId": correlation_id,
         "pipelineId": pipeline_state.get("pipelineId"),
+        "threadId": pipeline_state.get("threadId"),
         "document": {
             "documentName": pipeline_state.get("documentName"),
             "blobUri": pipeline_state.get("blobUri"),

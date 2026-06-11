@@ -12,7 +12,22 @@ from foundry_agents.utils.azure_mock import MockAIProjectClient
 
 def get_project_client(settings: AgentSettings) -> Any:
     """Instantiate AIProjectClient or Mock client depending on settings/environment."""
+    import urllib.parse
     conn_str = os.environ.get("AZURE_AI_PROJECT_CONNECTION_STRING") or ""
+    if not conn_str:
+        endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
+        sub_id = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+        rg_name = os.environ.get("AZURE_RESOURCE_GROUP", "")
+        if endpoint and sub_id and rg_name:
+            try:
+                parsed = urllib.parse.urlparse(endpoint)
+                host = parsed.netloc
+                project_name = parsed.path.rstrip("/").split("/")[-1]
+                if host and project_name:
+                    conn_str = f"{host};{sub_id};{rg_name};{project_name}"
+            except Exception:
+                pass
+
     # If connection string is missing or local/test app env, use mock client
     if not conn_str or settings.app_env in ["local", "test"]:
         return MockAIProjectClient()

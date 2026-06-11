@@ -69,14 +69,13 @@ scripts/foundry/Ensure-FoundryProject.ps1
 infrastructure/foundry/bicep/main.bicep
 ```
 
-The Foundry Bicep template creates:
+The Foundry Bicep template defaults to creating:
 
-- Azure AI Foundry account: `Microsoft.CognitiveServices/accounts`, kind
-  `AIServices`
-- Foundry project:
-  `Microsoft.CognitiveServices/accounts/projects`
-- Optional model deployment:
-  `Microsoft.CognitiveServices/accounts/deployments`
+- Azure AI Foundry account: `Microsoft.CognitiveServices/accounts`, kind `AIServices`
+- Foundry project: `Microsoft.CognitiveServices/accounts/projects`
+- Optional model deployment: `Microsoft.CognitiveServices/accounts/deployments`
+
+However, the automation scripts (`Ensure-FoundryOpenApiConnection.ps1`, `bootstrap-github-actions.ps1`, and `Ensure-FoundryProject.ps1`) are designed to be fully compatible with both the default Bicep-provisioned resource types and manually migrated/centrally managed **Microsoft AI Foundry** workspace resource types (`Microsoft.MachineLearningServices/workspaces`).
 
 The script can be rerun safely for the same environment. If model deployment is
 centrally managed, pass `-SkipFoundryModelDeployment` to bootstrap and provide
@@ -89,7 +88,7 @@ or supplied as workflow dispatch inputs:
 
 | Value | Purpose |
 | --- | --- |
-| `FOUNDRY_PROJECT_ENDPOINT` | Foundry project endpoint, for example `https://<resource>.services.ai.azure.com/api/projects/<project>`. |
+| `FOUNDRY_PROJECT_ENDPOINT` | Foundry project endpoint. Supports classic format `https://<resource>.services.ai.azure.com/api/projects/<project>` as well as new region-based workspace endpoints. |
 | `FOUNDRY_ACCOUNT_NAME` | Azure AI Foundry account resource name. |
 | `FOUNDRY_PROJECT_NAME` | Azure AI Foundry project resource name. |
 | `FOUNDRY_MODEL_DEPLOYMENT_NAME` | Model deployment used by the supervisor agent. |
@@ -134,9 +133,7 @@ Foundry Project Manager on the Foundry project
 
 The second role is required because agent registration calls the Foundry data
 plane and needs `Microsoft.CognitiveServices/accounts/AIServices/agents/write`.
-If registration fails with that data action, rerun bootstrap with
-`-FoundryAccountName` and `-FoundryProjectName` so the project-scoped Foundry
-role is assigned to the GitHub Actions service principal.
+The bootstrap script automatically detects the resource type (Azure AI Studio project vs. Microsoft AI Foundry workspace) and grants the role on the correct scope. If registration fails with that data action, rerun bootstrap with `-FoundryProjectName` so the role is correctly mapped to the target project.
 
 ## Workflow Sequence
 
@@ -166,12 +163,7 @@ scripts/foundry/Ensure-FoundryOpenApiConnection.ps1
 scripts/foundry/Register-FoundryAgent.ps1
 ```
 
-`Ensure-FoundryOpenApiConnection.ps1` is idempotent. It creates or updates the
-project connection under:
-
-```text
-Microsoft.CognitiveServices/accounts/{account}/projects/{project}/connections/{connection}
-```
+`Ensure-FoundryOpenApiConnection.ps1` is idempotent. It dynamically detects the resource type of the project. If it is a Machine Learning workspace, it registers the connection under `Microsoft.MachineLearningServices/workspaces/{workspace}/connections/{connection}` using API version `2024-04-01`. Otherwise, it falls back to the default Azure AI Studio connection path under `Microsoft.CognitiveServices/accounts/{account}/projects/{project}/connections/{connection}` using API version `2025-06-01`.
 
 `Register-FoundryAgent.ps1` prepares the resolved OpenAPI document and
 registration payload, then calls the Foundry agent REST endpoint. Use

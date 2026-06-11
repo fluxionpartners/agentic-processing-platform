@@ -67,7 +67,7 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 Assert-GuidValue -Name "SubscriptionId" -Value $SubscriptionId
 
 az account set --subscription $SubscriptionId
-Ensure-ResourceProviderRegistration -Namespaces @("Microsoft.CognitiveServices")
+Ensure-ResourceProviderRegistration -Namespaces @("Microsoft.CognitiveServices", "Microsoft.MachineLearningServices")
 
 $resourceGroupExists = az group exists --name $ResourceGroupName | ConvertFrom-Json
 if (-not $resourceGroupExists) {

@@ -356,6 +356,7 @@ $requiredResourceProviders = @(
     "Microsoft.DocumentDB",
     "Microsoft.Insights",
     "Microsoft.KeyVault",
+    "Microsoft.MachineLearningServices",
     "Microsoft.OperationalInsights",
     "Microsoft.ServiceBus",
     "Microsoft.Storage",
@@ -470,16 +471,34 @@ if ($GrantUserAccessAdministrator) {
         -Scope $resourceGroup.id
 }
 
-if ($FoundryAccountName -and $FoundryProjectName) {
-    $foundryProjectScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName/projects/$FoundryProjectName"
-    Write-Host "Configuring Foundry project RBAC scope: $foundryProjectScope"
-    Ensure-RoleAssignment `
-        -Assignee $appId `
-        -RoleName $FoundryProjectRoleName `
-        -Scope $foundryProjectScope
-}
-elseif ($FoundryProjectEndpoint -or $FoundryModelDeploymentName) {
-    Write-Warning "Foundry project RBAC was not configured because FoundryAccountName and FoundryProjectName were not both provided. Agent registration needs a Foundry data-plane role such as '$FoundryProjectRoleName' at the project scope."
+if ($FoundryProjectName) {
+    Write-Host "Detecting resource type for project '$FoundryProjectName' in resource group '$ResourceGroupName'..."
+    $mlWorkspaceId = az resource list `
+        --resource-group $ResourceGroupName `
+        --name $FoundryProjectName `
+        --query "[?type=='Microsoft.MachineLearningServices/workspaces'].id" `
+        --output tsv
+
+    $foundryProjectScope = $null
+    if (-not [string]::IsNullOrWhiteSpace($mlWorkspaceId)) {
+        Write-Host "Detected project of type Microsoft.MachineLearningServices/workspaces."
+        $foundryProjectScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.MachineLearningServices/workspaces/$FoundryProjectName"
+    }
+    elseif ($FoundryAccountName) {
+        Write-Host "Using default Azure AI Studio resource type: Microsoft.CognitiveServices/accounts/projects."
+        $foundryProjectScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName/projects/$FoundryProjectName"
+    }
+
+    if ($foundryProjectScope) {
+        Write-Host "Configuring Foundry project RBAC scope: $foundryProjectScope"
+        Ensure-RoleAssignment `
+            -Assignee $appId `
+            -RoleName $FoundryProjectRoleName `
+            -Scope $foundryProjectScope
+    }
+    else {
+        Write-Warning "Foundry project RBAC was not configured because FoundryAccountName and FoundryProjectName were not both provided or project resource was not found."
+    }
 }
 
 $portalAuthResult = $null

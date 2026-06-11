@@ -136,23 +136,19 @@ class AgentAdapterTests(unittest.TestCase):
         }, settings)
         self.assertEqual(rec["extraction"]["extractedData"], {})
 
-        # 7. Orchestrator rehydration
-        from foundry_agents.supervisor.orchestrator import SupervisorOrchestrator
-        orch = SupervisorOrchestrator()
-        checkpoint = {
-            "correlationId": "none-test",
-            "pipelineId": "none-test-pipeline",
-            "document": None,
-            "extraction": None,
-            "validation": None,
-            "humanReview": None,
-            "taxPlanning": None,
-            "form1040Document": None,
-            "compliance": None
-        }
-        # This should not raise any exceptions
-        orch.rehydrate_pipeline(checkpoint)
-        self.assertEqual(orch.state["correlationId"], "none-test")
+        # 7. Thread rehydration
+        from foundry_agents.utils.azure_helpers import reconstruct_state_from_thread
+        from foundry_agents.utils.azure_mock import MockAIProjectClient
+        
+        client = MockAIProjectClient()
+        thread = client.agents.create_thread()
+        client.agents.create_message(
+            thread_id=thread.id,
+            role="user",
+            content=__import__("json").dumps({"correlationId": "none-test"})
+        )
+        state = reconstruct_state_from_thread(client, thread.id)
+        self.assertEqual(state["correlationId"], "none-test")
 
 
 if __name__ == "__main__":

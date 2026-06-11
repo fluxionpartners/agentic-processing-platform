@@ -1,27 +1,32 @@
-"""
-Validation Agent.
+"""Validation Agent."""
 
-Applies business rules and compliance checks to extracted data.
-Flags anomalies and routes invalid records appropriately.
-"""
+from datetime import datetime, timezone
+import json
+from typing import Any, Optional
 
-from typing import Dict, Any, Optional
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
 
 from foundry_agents.config import AgentSettings, load_agent_settings
-from foundry_agents.time_utils import utc_iso
 from foundry_agents.validation.adapters import create_validation_adapter
+from foundry_agents.utils.azure_helpers import reconstruct_state_from_thread
 
 
 class ValidationAgent:
     """Handles data validation and rule application."""
 
     @staticmethod
-    def process(payload: Dict[str, Any], settings: Optional[AgentSettings] = None) -> Dict[str, Any]:
+    def process(
+        thread_id: str,
+        project_client: AIProjectClient,
+        settings: Optional[AgentSettings] = None
+    ) -> Any:
         """Validate extracted data."""
         settings = settings or load_agent_settings()
-        correlation_id = payload.get("correlationId")
+        state = reconstruct_state_from_thread(project_client, thread_id)
+        
         adapter = create_validation_adapter(settings)
-        validation = adapter.validate(payload)
+        validation = adapter.validate(state)
         issues = validation["issues"]
         warnings = validation["warnings"]
         low_confidence = validation["lowConfidenceFields"]
@@ -30,7 +35,7 @@ class ValidationAgent:
         needs_review = bool(issues or low_confidence)
 
         result = {
-            "correlationId": correlation_id,
+            "correlationId": state.get("correlationId"),
             "validationStatus": validation_status,
             "issues": issues,
             "warnings": warnings,
@@ -43,11 +48,19 @@ class ValidationAgent:
             else "low_confidence_extraction"
             if low_confidence
             else None,
-            "validationTimestamp": utc_iso(),
+            "validationTimestamp": datetime.now(timezone.utc).isoformat(),
             "nextStep": "human_review" if needs_review else "tax_mapping",
         }
 
-        return result
+        project_client.agents.create_message(
+            thread_id=thread_id,
+            role="assistant",
+            content=json.dumps(result)
+        )
+        
+        assistant_id = getattr(settings, "validation_assistant_id", "asst_validation")
+        run = project_client.agents.create_run(thread_id=thread_id, assistant_id=assistant_id)
+        return run
 
 
 if __name__ == "__main__":

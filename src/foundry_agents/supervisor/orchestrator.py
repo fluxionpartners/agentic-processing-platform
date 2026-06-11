@@ -1,279 +1,194 @@
-"""
-Supervisor Agent Orchestrator.
+"""Supervisor Agent Orchestrator.
 
-Coordinates the entire tax processing pipeline:
-- Receives intake triggers (manual or event-driven)
-- Routes to intake agent
-- Coordinates extraction, validation, and mapping
-- Manages human review and compliance gates
+Coordinates the entire tax processing pipeline using azure-ai-projects:
+- Instantiates a cloud-managed thread
+- Chains the agent tools sequentially on the thread
+- Polls execution runs to verify success at each stage
 """
 
-from typing import Any, Dict
-from uuid import uuid4
+import json
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from foundry_agents.time_utils import utc_iso
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+
+from foundry_agents.config import AgentSettings, load_agent_settings
+from foundry_agents.compliance.agent import ComplianceAgent
+from foundry_agents.extraction.agent import ExtractionAgent
+from foundry_agents.form_generation.agent import Form1040GenerationAgent
+from foundry_agents.human_review.agent import HumanReviewAgent
+from foundry_agents.intake.agent import IntakeAgent
+from foundry_agents.tax_mapping.agent import TaxMappingAgent
+from foundry_agents.validation.agent import ValidationAgent
+from foundry_agents.utils.azure_helpers import get_project_client, reconstruct_state_from_thread
 
 
 class SupervisorOrchestrator:
-    """Orchestrates the tax pipeline workflow."""
+    """Orchestrates the tax pipeline workflow using Azure AI Projects."""
 
-    def __init__(self):
-        self.pipeline_id = None
-        self.correlation_id = None
-        self.state = {}
+    def __init__(self, project_client: Optional[AIProjectClient] = None, settings: Optional[AgentSettings] = None):
+        self.settings = settings or load_agent_settings()
+        self.project_client = project_client or get_project_client(self.settings)
+        self.execution_log: List[Dict[str, Any]] = []
 
-    def start_pipeline(
-        self, intake_payload: Dict[str, Any], runtime_settings: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """Initialize pipeline from intake trigger."""
-        self.correlation_id = intake_payload.get("correlationId") or str(uuid4())
-        self.pipeline_id = f"pipeline-{self.correlation_id}"
+    def record_step(self, stage: str, agent: str, result: Dict[str, Any]) -> None:
+        self.execution_log.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "stage": stage,
+                "agent": agent,
+                "result": result,
+            }
+        )
 
-        self.state = {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "tenantId": intake_payload.get("tenantId"),
-            "taxpayerId": intake_payload.get("taxpayerId"),
-            "documentName": intake_payload.get("documentName"),
-            "blobUri": intake_payload.get("blobUri"),
-            "taxYear": intake_payload.get("taxYear"),
-            "stage": "intake",
-            "status": "in_progress",
-            "runtimeSettings": runtime_settings or {},
-            "timestamp": utc_iso(),
-        }
-        if "mockExtractionOverrides" in intake_payload:
-            self.state["mockExtractionOverrides"] = intake_payload["mockExtractionOverrides"]
+    def run(self, intake_payload: Dict[str, Any], thread_id: Optional[str] = None) -> Dict[str, Any]:
+        """Execute the full agent pipeline sequentially on a thread."""
+        # Unify via native threads: refactor to instantiate cloud-managed thread if not provided
+        if not thread_id:
+            thread = self.project_client.agents.create_thread()
+            thread_id = thread.id
+            # Add initial payload to thread
+            payload_to_save = dict(intake_payload)
+            payload_to_save.setdefault("runtimeSettings", self.settings.as_runtime_metadata())
+            self.project_client.agents.create_message(
+                thread_id=thread_id,
+                role="user",
+                content=json.dumps(payload_to_save)
+            )
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "intake",
-            "payload": self.state,
-        }
+        state = reconstruct_state_from_thread(self.project_client, thread_id)
 
-    def route_to_extraction(self, intake_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route successfully ingested document to extraction."""
-        self.state["stage"] = "extraction"
-        self.state["intakeResult"] = intake_result
+        # 1. Intake Stage
+        if "intakeResult" not in state:
+            run = IntakeAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+            self.record_step("intake", "IntakeAgent", state.get("intakeResult", {}))
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "extraction",
-            "payload": self.state,
-        }
+        # 2. Extraction Stage
+        if "extractionResult" not in state:
+            run = ExtractionAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+            self.record_step("extraction", "ExtractionAgent", state.get("extractionResult", {}))
 
-    def route_to_validation(self, extraction_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route extracted data to validation."""
-        self.state["stage"] = "validation"
-        self.state["extractionResult"] = extraction_result
+        # 3. Validation Stage
+        if "validationResult" not in state:
+            run = ValidationAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+            self.record_step("validation", "ValidationAgent", state.get("validationResult", {}))
+        validation_result = state.get("validationResult", {})
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "validation",
-            "payload": self.state,
-        }
+        # 4. Human Review Gate (if flagged)
+        needs_review = validation_result.get("needsReview", False)
+        if needs_review:
+            if "humanReviewResult" not in state:
+                # Human review uses custom logic / external gate
+                review_result = HumanReviewAgent.process(state, self.settings)
+                self.record_step("human_review", "HumanReviewAgent", review_result)
 
-    def route_to_tax_mapping(self, validation_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route validated data to tax mapping."""
-        self.state["stage"] = "tax_mapping"
-        self.state["validationResult"] = validation_result
+                # Store the human review result back onto the thread
+                self.project_client.agents.create_message(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=json.dumps({"humanReviewResult": review_result})
+                )
+                state = reconstruct_state_from_thread(self.project_client, thread_id)
+            else:
+                self.record_step("human_review", "HumanReviewAgent", state["humanReviewResult"])
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "tax_mapping",
-            "payload": self.state,
-        }
+            review_result = state["humanReviewResult"]
+            if review_result.get("nextStep") != "tax_mapping":
+                # Persist pipeline checkpoint on pause
+                from foundry_agents.persistence import persist_tax_pipeline_checkpoint
+                state["threadId"] = thread_id
+                state["checkpointStage"] = "await_human_review"
+                state["lifecycleStatus"] = "waiting"
+                state["document"] = {"documentName": state.get("documentName"), "blobUri": state.get("blobUri")}
+                persist_tax_pipeline_checkpoint(state, self.settings, "await_human_review")
+                
+                state["status"] = "waiting"
+                state["stage"] = "awaiting_human_review"
 
-    def route_to_form_generation(self, mapping_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route mapped data to Form 1040 generation."""
-        self.state["stage"] = "form_generation"
-        self.state["mappingResult"] = mapping_result
+                return {
+                    "pipelineId": f"pipeline-{state.get('correlationId')}",
+                    "correlationId": state.get("correlationId"),
+                    "status": "waiting",
+                    "nextStep": "awaiting_human_decision",
+                    "thread_id": thread_id,
+                    "payload": state,
+                }
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "form_generation",
-            "payload": self.state,
-        }
+        # 5. Tax Mapping Stage
+        if "mappingResult" not in state:
+            run = TaxMappingAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+        self.record_step("tax_mapping", "TaxMappingAgent", state.get("mappingResult", {}))
 
-    def route_to_compliance(self, form_generation_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Route generated tax artifacts to compliance check."""
-        self.state["stage"] = "compliance"
-        self.state["formGenerationResult"] = form_generation_result
+        # 6. Form 1040 Generation Stage
+        if "formGenerationResult" not in state:
+            run = Form1040GenerationAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+        self.record_step("form_generation", "Form1040GenerationAgent", state.get("formGenerationResult", {}))
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "compliance",
-            "payload": self.state,
-        }
+        # 7. Compliance Stage
+        if "complianceResult" not in state:
+            run = ComplianceAgent.process(thread_id, self.project_client, self.settings)
+            run = self._poll_run(thread_id, run.id)
+            state = reconstruct_state_from_thread(self.project_client, thread_id)
+        compliance_result = state.get("complianceResult", {})
+        self.record_step("compliance", "ComplianceAgent", compliance_result)
 
-    def route_to_human_review(self, review_source: Dict[str, Any]) -> Dict[str, Any]:
-        """Route to human review if flagged."""
-        self.state["stage"] = "human_review"
-        self.state["humanReviewSource"] = review_source
-        if "validationStatus" in review_source:
-            self.state["validationResult"] = review_source
+        # 8. Finalize
+        state["status"] = "success"
+        state["stage"] = "complete"
+        state["threadId"] = thread_id
 
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "nextAgent": "human_review",
-            "payload": self.state,
-        }
+        # Persist tax facts before adding execution_log to state
+        # (execution_log contains result refs that would cause circular json.dumps)
+        from foundry_agents.persistence import persist_tax_pipeline_state
+        try:
+            persistence_result = persist_tax_pipeline_state(state, self.settings)
+            state["persistenceResult"] = persistence_result
+            self.record_step("persistence", "TaxFactPersistence", persistence_result)
+        except Exception:
+            pass
 
-    def record_human_review(self, review_result: Dict[str, Any]) -> None:
-        """Record human review status before continuing the automated pipeline."""
-        self.state["humanReviewResult"] = review_result
+        # Add execution_log to state AFTER persistence to avoid circular refs
+        state["execution_log"] = self.execution_log
 
-    def finalize_pipeline(self, final_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Finalize the pipeline and record completion."""
-        self.state["stage"] = "complete"
-        self.state["status"] = "success"
-        self.state["finalResult"] = final_result
-        self.state["completedAt"] = utc_iso()
-
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
+        final_result = {
+            "pipelineId": f"pipeline-{state.get('correlationId')}",
+            "correlationId": state.get("correlationId"),
             "status": "complete",
-            "payload": self.state,
+            "thread_id": thread_id,
+            "payload": state,
         }
 
-    def record_persistence(self, persistence_result: Dict[str, Any]) -> None:
-        """Record durable persistence metadata for the completed pipeline."""
-        self.state["persistenceResult"] = persistence_result
+        # Record a finalize summary (not the full final_result, to avoid circular ref)
+        self.record_step("finalize", "Orchestrator", {
+            "pipelineId": final_result["pipelineId"],
+            "status": "complete",
+            "correlationId": final_result["correlationId"],
+        })
+        return final_result
 
-    def record_persistence_checkpoint(self, checkpoint_result: Dict[str, Any]) -> None:
-        """Record durable checkpoint metadata for resume and audit visibility."""
-        self.state.setdefault("persistenceCheckpoints", []).append(checkpoint_result)
-
-    def rehydrate_pipeline(self, checkpoint_record: Dict[str, Any]) -> None:
-        """Rehydrate pipeline state from a saved checkpoint."""
-        self.correlation_id = checkpoint_record.get("correlationId")
-        self.pipeline_id = checkpoint_record.get("pipelineId")
-        self.state = {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "tenantId": checkpoint_record.get("tenantId"),
-            "taxpayerId": checkpoint_record.get("taxpayerId"),
-            "documentName": (checkpoint_record.get("document") or {}).get("documentName"),
-            "blobUri": (checkpoint_record.get("document") or {}).get("blobUri"),
-            "taxYear": checkpoint_record.get("taxYear"),
-            "stage": checkpoint_record.get("checkpointStage"),
-            "status": checkpoint_record.get("lifecycleStatus"),
-            "createdAt": checkpoint_record.get("createdAt"),
-            "updatedAt": checkpoint_record.get("updatedAt"),
-            "runtimeSettings": checkpoint_record.get("governance") or {},
-        }
-
-        if "persistenceCheckpoints" in checkpoint_record:
-            self.state["persistenceCheckpoints"] = checkpoint_record["persistenceCheckpoints"]
-
-        document_rec = checkpoint_record.get("document") or {}
-        if document_rec.get("sourceStatus"):
-            self.state["intakeResult"] = {
-                "correlationId": self.correlation_id,
-                "blobUri": document_rec.get("blobUri"),
-                "intakeStatus": document_rec.get("sourceStatus"),
-                "intakeTimestamp": checkpoint_record.get("createdAt"),
-                "nextStep": "extraction",
-            }
-
-        extraction_rec = checkpoint_record.get("extraction") or {}
-        if extraction_rec.get("status"):
-            self.state["extractionResult"] = {
-                "extractionStatus": extraction_rec["status"],
-                "source": extraction_rec.get("source"),
-                "extractedData": extraction_rec.get("extractedData"),
-                "fieldConfidence": extraction_rec.get("fieldConfidence"),
-                "overallConfidence": extraction_rec.get("overallConfidence"),
-                "extractionTimestamp": extraction_rec.get("extractionTimestamp"),
-            }
-        validation_rec = checkpoint_record.get("validation") or {}
-        if validation_rec.get("status"):
-            self.state["validationResult"] = {
-                "validationStatus": validation_rec["status"],
-                "needsReview": validation_rec.get("needsReview"),
-                "reviewReason": validation_rec.get("reviewReason"),
-                "issues": validation_rec.get("issues"),
-                "warnings": validation_rec.get("warnings"),
-            }
-        human_review_rec = checkpoint_record.get("humanReview") or {}
-        if human_review_rec.get("status") is not None:
-            status = human_review_rec["status"]
-            next_step = "tax_mapping" if status in {"approved", "completed"} else "awaiting_human_decision"
-            self.state["humanReviewResult"] = {
-                "reviewStatus": status,
-                "reviewReason": human_review_rec.get("reason"),
-                "assignedQueue": human_review_rec.get("assignedQueue"),
-                "submittedForReview": human_review_rec.get("submittedForReview"),
-                "nextStep": next_step,
-            }
-        tax_planning_rec = checkpoint_record.get("taxPlanning") or {}
-        if tax_planning_rec.get("mappingStatus"):
-            self.state["mappingResult"] = {
-                "mappingStatus": tax_planning_rec["mappingStatus"],
-                "mappingProfile": tax_planning_rec.get("mappingProfile"),
-                "normalizedTaxFacts": tax_planning_rec.get("normalizedTaxFacts"),
-                "form1040": tax_planning_rec.get("form1040"),
-            }
-        form1040_doc_rec = checkpoint_record.get("form1040Document") or {}
-        if form1040_doc_rec.get("status"):
-            self.state["formGenerationResult"] = {
-                "generationStatus": form1040_doc_rec["status"],
-                "generationMode": form1040_doc_rec.get("generationMode"),
-                "artifactMode": form1040_doc_rec.get("artifactMode"),
-                "templateVersion": form1040_doc_rec.get("templateVersion"),
-                "documentType": form1040_doc_rec.get("documentType"),
-                "taxYear": form1040_doc_rec.get("taxYear"),
-                "fieldValues": form1040_doc_rec.get("fieldValues") or {},
-                "artifact": form1040_doc_rec.get("artifact") or {},
-                "generatedAt": form1040_doc_rec.get("generatedAt"),
-                "nextStep": "compliance",
-            }
-        compliance_rec = checkpoint_record.get("compliance") or {}
-        if compliance_rec.get("status"):
-            self.state["finalResult"] = {
-                "complianceStatus": compliance_rec["status"],
-                "complianceMode": compliance_rec.get("mode"),
-                "checks": compliance_rec.get("checks"),
-                "auditEvent": compliance_rec.get("auditEvent"),
-            }
-
-    def await_human_review(self, review_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Pause the pipeline until a human decision is recorded."""
-        self.state["stage"] = "awaiting_human_review"
-        self.state["status"] = "waiting"
-        self.state["humanReviewResult"] = review_result
-        self.state["pausedAt"] = utc_iso()
-
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "status": "waiting",
-            "nextStep": "awaiting_human_decision",
-            "payload": self.state,
-        }
-
-    def handle_error(self, error_message: str, stage: str) -> Dict[str, Any]:
-        """Handle pipeline errors and route to exception handling."""
-        self.state["stage"] = stage
-        self.state["status"] = "error"
-        self.state["error"] = error_message
-        self.state["failedAt"] = utc_iso()
-
-        return {
-            "pipelineId": self.pipeline_id,
-            "correlationId": self.correlation_id,
-            "status": "error",
-            "payload": self.state,
-        }
+    def _poll_run(self, thread_id: str, run_id: str) -> Any:
+        """Poll the run status sequentially until completion."""
+        while True:
+            run = self.project_client.agents.get_run(thread_id=thread_id, run_id=run_id)
+            if run.status not in ["queued", "in_progress"]:
+                break
+            time.sleep(0.001)
+        if run.status != "completed":
+            raise RuntimeError(f"Run {run_id} failed with status {run.status}")
+        return run
 
 
 if __name__ == "__main__":
-    print("Supervisor Orchestrator loaded. Use ManualTestHarness to trigger pipelines.")
+    print("Supervisor Orchestrator loaded.")

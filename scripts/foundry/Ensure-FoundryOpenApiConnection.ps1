@@ -48,10 +48,32 @@ if ([string]::IsNullOrWhiteSpace($functionKey)) {
     throw "Unable to retrieve the default host key from Function App '$FunctionAppName'. Verify RBAC and that the Function App exists."
 }
 
-$connectionUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName/projects/$FoundryProjectName/connections/$ConnectionName" +
-    "?api-version=$ApiVersion"
+Write-Host "Detecting resource type for project '$FoundryProjectName' in resource group '$ResourceGroupName'..."
+$mlWorkspaceId = az resource list `
+    --resource-group $ResourceGroupName `
+    --name $FoundryProjectName `
+    --query "[?type=='Microsoft.MachineLearningServices/workspaces'].id" `
+    --output tsv
 
-$connectionResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName/projects/$FoundryProjectName/connections/$ConnectionName"
+$provider = "Microsoft.CognitiveServices"
+$parentSegment = "accounts/$FoundryAccountName/projects/$FoundryProjectName"
+$apiVersionToUse = $ApiVersion
+
+if (-not [string]::IsNullOrWhiteSpace($mlWorkspaceId)) {
+    Write-Host "Detected project of type Microsoft.MachineLearningServices/workspaces."
+    $provider = "Microsoft.MachineLearningServices"
+    $parentSegment = "workspaces/$FoundryProjectName"
+    if ($ApiVersion -eq "2025-06-01") {
+        $apiVersionToUse = "2024-04-01"
+    }
+} else {
+    Write-Host "Using default Azure AI Studio resource type: Microsoft.CognitiveServices/accounts/projects."
+}
+
+$connectionUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/$provider/$parentSegment/connections/$ConnectionName" +
+    "?api-version=$apiVersionToUse"
+
+$connectionResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/$provider/$parentSegment/connections/$ConnectionName"
 
 $requestBody = [ordered]@{
     properties = [ordered]@{

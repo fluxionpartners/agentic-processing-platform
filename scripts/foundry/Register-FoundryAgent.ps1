@@ -15,7 +15,7 @@ param(
     [string] $OpenApiPath = "src/services/foundry-tools/openapi.json",
     [string] $Environment = "dev",
     [string] $OutputDirectory = "artifacts/foundry-registration",
-    [string] $ApiVersion = "v1",
+    [string] $ApiVersion = "2024-10-21-preview",
     [switch] $PrepareOnly
 )
 
@@ -83,7 +83,7 @@ function Assert-ValidOperationIds {
 }
 
 if ([string]::IsNullOrWhiteSpace($ProjectEndpoint)) {
-    throw "ProjectEndpoint is required. Use the Foundry project endpoint, for example https://<resource>.services.ai.azure.com/api/projects/<project>."
+    throw "ProjectEndpoint is required. Use the Foundry project endpoint, for example https://<resource>.services.ai.azure.com/api/projects/<project> or a region-based workspace endpoint."
 }
 
 if ([string]::IsNullOrWhiteSpace($ModelDeploymentName)) {
@@ -221,7 +221,8 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     throw "Unable to acquire an Azure AI Foundry access token. Verify azure/login completed successfully and the identity has Contributor or Owner on the Foundry project."
 }
 
-$uri = "$($ProjectEndpoint.TrimEnd('/'))/assistants?api-version=$ApiVersion"
+$routeSuffix = if ($ApiVersion -eq "v1") { "assistants" } else { "agents" }
+$uri = "$($ProjectEndpoint.TrimEnd('/'))/$routeSuffix?api-version=$ApiVersion"
 Write-Host "Registering Foundry supervisor agent."
 
 $response = az rest `

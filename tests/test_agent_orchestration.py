@@ -9,9 +9,16 @@ if str(SRC_ROOT) not in sys.path:
 from foundry_agents.manual_test_harness import ManualTestHarness
 from foundry_agents.config import AgentSettings, HUMAN_REVIEW_MODE_QUEUE
 from foundry_agents.pipeline import AgentPipeline, process_w2_ingestion_event
+from foundry_agents.utils.azure_mock import MockAgentsOperations
 
 
 class AgentOrchestrationTests(unittest.TestCase):
+    def setUp(self):
+        MockAgentsOperations.reset()
+        import shutil
+        local_state = Path(__file__).resolve().parents[1] / ".local_state"
+        if local_state.exists():
+            shutil.rmtree(local_state, ignore_errors=True)
     def test_full_pipeline_completes_successfully(self):
         harness = ManualTestHarness()
 
@@ -27,17 +34,11 @@ class AgentOrchestrationTests(unittest.TestCase):
             [entry["stage"] for entry in harness.execution_log],
             [
                 "intake",
-                "intake_checkpoint",
                 "extraction",
-                "extraction_checkpoint",
                 "validation",
-                "validation_checkpoint",
                 "tax_mapping",
-                "tax_mapping_checkpoint",
                 "form_generation",
-                "form_generation_checkpoint",
                 "compliance",
-                "compliance_checkpoint",
                 "persistence",
                 "finalize",
             ],
@@ -52,8 +53,6 @@ class AgentOrchestrationTests(unittest.TestCase):
         stages = [entry["stage"] for entry in harness.execution_log]
         self.assertEqual(result["status"], "complete")
         self.assertIn("human_review", stages)
-        self.assertIn("extraction_checkpoint", stages)
-        self.assertIn("human_review_checkpoint", stages)
         self.assertIn("persistence", stages)
         self.assertEqual(result["payload"]["validationResult"]["validationStatus"], "failed")
         self.assertEqual(result["payload"]["humanReviewResult"]["reviewStatus"], "pending")
@@ -96,15 +95,9 @@ class AgentOrchestrationTests(unittest.TestCase):
             [entry["stage"] for entry in pipeline.execution_log],
             [
                 "intake",
-                "intake_checkpoint",
                 "extraction",
-                "extraction_checkpoint",
                 "validation",
-                "validation_checkpoint",
                 "human_review",
-                "human_review_checkpoint",
-                "await_human_review_checkpoint",
-                "await_human_review",
             ],
         )
 

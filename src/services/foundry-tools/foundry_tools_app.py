@@ -17,6 +17,7 @@ from foundry_agents.tools.w2_pipeline_tools import TOOL_REGISTRY
 from foundry_agents.config import load_agent_settings
 from foundry_agents.persistence.store import create_tax_fact_store
 from foundry_agents.pipeline import process_w2_ingestion_event
+from foundry_agents.utils.azure_helpers import get_project_client
 
 
 ROUTE_TO_TOOL = {
@@ -208,7 +209,8 @@ def _resolve_supervisor_agent_id(token: str) -> str:
     if not FOUNDRY_SUPERVISOR_AGENT_NAME:
         raise ValueError("FOUNDRY_SUPERVISOR_AGENT_ID or FOUNDRY_SUPERVISOR_AGENT_NAME must be configured.")
 
-    response = _foundry_request("GET", "/assistants", token)
+    route_suffix = "/assistants" if FOUNDRY_API_VERSION == "v1" else "/agents"
+    response = _foundry_request("GET", route_suffix, token)
     candidates = response.get("data") if isinstance(response.get("data"), list) else response.get("value")
     if not isinstance(candidates, list):
         candidates = []
@@ -249,58 +251,62 @@ def invoke_foundry_supervisor_agent(payload: Dict[str, Any]) -> Tuple[Dict[str, 
         }, 400
 
     try:
-        token = _foundry_access_token()
-        agent_id = _resolve_supervisor_agent_id(token)
-        thread = _foundry_request(
-            "POST",
-            "/threads",
-            token,
-            {
-                "metadata": {
-                    "correlationId": str(payload.get("correlationId")),
-                    "tenantId": str(payload.get("tenantId")),
-                    "executionMode": "foundry-agent",
-                }
-            },
-        )
-        thread_id = _object_id(thread)
-        if not thread_id:
-            raise RuntimeError("Foundry thread creation did not return an id.")
+        settings = load_agent_settings()
+        project_client = get_project_client(settings)
 
-        _foundry_request(
-            "POST",
-            f"/threads/{thread_id}/messages",
-            token,
-            {
-                "role": "user",
-                "content": _build_agent_prompt(payload),
-            },
-        )
-        run = _foundry_request(
-            "POST",
-            f"/threads/{thread_id}/runs",
-            token,
-            {
-                "assistant_id": agent_id,
-                "metadata": {
-                    "correlationId": str(payload.get("correlationId")),
-                    "tenantId": str(payload.get("tenantId")),
-                    "executionMode": "foundry-agent",
-                },
-            },
-        )
-        run_id = _object_id(run)
-        if not run_id:
-            raise RuntimeError("Foundry run creation did not return an id.")
+        # Resolve supervisor agent/assistant ID
+        agent_id = FOUNDRY_SUPERVISOR_AGENT_ID
+        if not agent_id:
+            # Fallback: list assistants to find one matching name
+            try:
+                assistants = project_client.agents.list_agents()
+                for asst in getattr(assistants, "data", []):
+                    if getattr(asst, "name", "") == FOUNDRY_SUPERVISOR_AGENT_NAME:
+                        agent_id = asst.id
+                        break
+            except Exception:
+                pass
+        
+        if not agent_id:
+            agent_id = FOUNDRY_SUPERVISOR_AGENT_NAME
 
-        run_status = str(run.get("status") or "").lower()
+        # Create thread via SDK
+        thread = project_client.agents.create_thread(
+            metadata={
+                "correlationId": str(payload.get("correlationId")),
+                "tenantId": str(payload.get("tenantId")),
+                "executionMode": "foundry-agent",
+            }
+        )
+        thread_id = thread.id
+
+        # Add initial prompt message
+        project_client.agents.create_message(
+            thread_id=thread_id,
+            role="user",
+            content=_build_agent_prompt(payload),
+        )
+
+        # Create execution run
+        run = project_client.agents.create_run(
+            thread_id=thread_id,
+            assistant_id=agent_id,
+            metadata={
+                "correlationId": str(payload.get("correlationId")),
+                "tenantId": str(payload.get("tenantId")),
+                "executionMode": "foundry-agent",
+            },
+        )
+        run_id = run.id
+
+        run_status = str(run.status or "").lower()
         if bool(payload.get("waitForAgentRun")):
             terminal_statuses = {"completed", "failed", "cancelled", "expired"}
             deadline = time.time() + int(payload.get("agentRunTimeoutSeconds") or 120)
             while run_status not in terminal_statuses and time.time() < deadline:
                 time.sleep(2)
-                run = _foundry_request("GET", f"/threads/{thread_id}/runs/{run_id}", token)
-                run_status = str(run.get("status") or "").lower()
+                run = project_client.agents.get_run(thread_id=thread_id, run_id=run_id)
+                run_status = str(run.status or "").lower()
 
             if run_status != "completed":
                 return {

@@ -113,7 +113,7 @@ everything GitHub Actions needs:
 | `-FoundryModelSkuName` | String | No | `GlobalStandard` | Deployment SKU type (e.g. `GlobalStandard`, `Standard`, `DataZoneStandard`). |
 | `-FoundryModelSkuCapacity` | Integer | No | `10` | Deployment capacity in thousands of TPM (Token Per Minute). |
 | `-SkipFoundryModelDeployment` | Switch | No | `False` | Skip model deployment if the model is already deployed in the hub. |
-| `-FoundryProjectEndpoint` | String | No | - | Endpoint URL of an existing centrally managed Foundry Project. |
+| `-FoundryProjectEndpoint` | String | No | - | Endpoint URL of an existing centrally managed Foundry Project. Supports the classic Azure AI Studio endpoint format (`https://<resource>.services.ai.azure.com/api/projects/<project>`) as well as the new Microsoft AI Foundry workspace endpoint format. |
 | `-FoundryModelDeploymentName` | String | No | Matches model/env | Deployment name of the model in the Foundry Project. |
 | `-FoundryOpenApiConnectionName`| String | No | `w2toolsfnkey` | Name of the connection to create/use in AI Foundry. |
 | `-FoundrySupervisorAgentName` | String | No | `foundry-w2-tax-orchestrator` | Name of the supervisor agent. |
@@ -144,14 +144,20 @@ role assignments. Keep that permission scoped to the resource group.
 Foundry agent registration uses the Foundry data plane, not only Azure ARM.
 The GitHub Actions service principal therefore needs a Foundry project-scoped
 role with `Microsoft.CognitiveServices/accounts/AIServices/agents/write`. The
-bootstrap script grants `Foundry Project Manager` at:
+bootstrap script automatically detects the resource type of the project and grants `Foundry Project Manager` at:
 
+- **Classic Azure AI Studio project scope**:
 ```text
 /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<foundry-account>/projects/<foundry-project>
 ```
 
+- **New Microsoft AI Foundry workspace scope**:
+```text
+/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.MachineLearningServices/workspaces/<foundry-project>
+```
+
 If you see `PermissionDenied` for `AIServices/agents/write`, rerun bootstrap
-with `-FoundryAccountName` and `-FoundryProjectName`, wait a few minutes for
+with `-FoundryProjectName`, wait a few minutes for
 RBAC propagation, and rerun the workflow.
 
 ## Required Local Tools
@@ -210,7 +216,7 @@ Provider registration is subscription-scoped. The bootstrap and preflight script
 register/check the providers used by this solution, including `Microsoft.Web`,
 `Microsoft.ServiceBus`, `Microsoft.DocumentDB`, `Microsoft.Storage`,
 `Microsoft.KeyVault`, `Microsoft.ApiManagement`, `Microsoft.Insights`,
-`Microsoft.OperationalInsights`, and `Microsoft.Authorization`.
+`Microsoft.OperationalInsights`, `Microsoft.Authorization`, and `Microsoft.MachineLearningServices`.
 
 Cosmos DB has its own location parameter because Cosmos capacity can differ from
 the rest of the Azure platform capacity. For dev, the workflow defaults the

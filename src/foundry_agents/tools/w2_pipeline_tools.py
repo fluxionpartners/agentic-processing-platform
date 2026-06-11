@@ -1,10 +1,10 @@
 """Callable tool bindings for Foundry agents and MCP hosts.
 
 These functions are intentionally thin wrappers around the governed agent
-workers. A Foundry prompt agent, hosted agent, or MCP server can expose these
-functions as tools while keeping the regulated processing logic in Python.
+workers. They support thread-based native runs in the Azure AI Projects environment.
 """
 
+import json
 from typing import Any, Callable, Dict
 
 from foundry_agents.compliance.agent import ComplianceAgent
@@ -17,10 +17,11 @@ from foundry_agents.persistence import (
     persist_tax_pipeline_checkpoint,
     persist_tax_pipeline_state,
 )
-from foundry_agents.pipeline import process_w2_ingestion_event
+from foundry_agents.pipeline import process_w2_ingestion_event, AgentPipeline
 from foundry_agents.supervisor.orchestrator import SupervisorOrchestrator
 from foundry_agents.tax_mapping.agent import TaxMappingAgent
 from foundry_agents.validation.agent import ValidationAgent
+from foundry_agents.utils.azure_helpers import get_project_client
 
 
 ToolCallable = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -34,51 +35,108 @@ def run_w2_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
 def start_w2_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Create the initial orchestrator state for an intake event."""
     settings = load_agent_settings()
-    orchestrator = SupervisorOrchestrator()
-    return orchestrator.start_pipeline(payload, runtime_settings=settings.as_runtime_metadata())
+    orchestrator = SupervisorOrchestrator(settings=settings)
+    # Instantiate the pipeline/thread
+    result = orchestrator.run(payload)
+    return result
+
+
+def _get_thread_context(payload: Dict[str, Any]) -> tuple:
+    settings = load_agent_settings()
+    project_client = get_project_client(settings)
+    thread_id = payload.get("threadId") or payload.get("thread_id")
+    if not thread_id:
+        thread = project_client.agents.create_thread()
+        thread_id = thread.id
+        project_client.agents.create_message(
+            thread_id=thread_id,
+            role="user",
+            content=json.dumps(payload)
+        )
+    return thread_id, project_client, settings
 
 
 def process_w2_intake(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run the intake worker for an already-uploaded W-2 document."""
-    return IntakeAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = IntakeAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def extract_w2_document(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Extract normalized W-2 facts using the configured extraction adapter."""
-    return ExtractionAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = ExtractionAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def validate_w2_facts(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Validate normalized W-2 facts and decide whether review is needed."""
-    return ValidationAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = ValidationAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def submit_w2_human_review(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Create or route a human-review packet for flagged W-2 facts."""
-    return HumanReviewAgent.process(payload, load_agent_settings())
+    settings = load_agent_settings()
+    # Human review remains a custom python adapter run outside the thread container
+    return HumanReviewAgent.process(payload, settings)
 
 
 def map_w2_tax_facts(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Map validated W-2 facts into 1040-ready and planning facts."""
-    return TaxMappingAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = TaxMappingAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def generate_form_1040_document(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Generate a Form 1040 artifact from mapped tax facts."""
-    return Form1040GenerationAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = Form1040GenerationAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def evaluate_w2_compliance(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Evaluate compliance controls and emit an audit envelope."""
-    return ComplianceAgent.process(payload, load_agent_settings())
+    thread_id, project_client, settings = _get_thread_context(payload)
+    run = ComplianceAgent.process(thread_id, project_client, settings)
+    return {
+        "threadId": thread_id,
+        "runId": run.id,
+        "status": run.status,
+    }
 
 
 def persist_w2_pipeline_checkpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Persist a governed checkpoint for the supplied pipeline state."""
-    settings = load_agent_settings()
-    stage = payload.get("checkpointStage") or payload.get("stage")
-    state = payload.get("state") or payload
-    return persist_tax_pipeline_checkpoint(state, settings, stage)
+    # Checkpoint methods are removed/stubbed out as they are managed via native threads.
+    # Return a dummy success payload to keep tooling compat.
+    return {
+        "persistenceStatus": "skipped",
+        "message": "Manual checkpointing is replaced by native thread tracking.",
+    }
 
 
 def persist_completed_w2_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:

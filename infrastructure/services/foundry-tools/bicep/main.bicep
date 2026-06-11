@@ -294,6 +294,14 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: 'v1'
         }
         {
+          name: 'AZURE_SUBSCRIPTION_ID'
+          value: subscription().subscriptionId
+        }
+        {
+          name: 'AZURE_RESOURCE_GROUP'
+          value: resourceGroup().name
+        }
+        {
           name: 'W2_EXTRACTION_MODE'
           value: extractionMode
         }
