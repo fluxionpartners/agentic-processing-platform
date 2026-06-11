@@ -224,23 +224,28 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 $routeSuffix = if ($ApiVersion -eq "v1") { "assistants" } else { "agents" }
 $uri = "$($ProjectEndpoint.TrimEnd('/'))/$routeSuffix?api-version=$ApiVersion"
 Write-Host "Registering Foundry supervisor agent."
+Write-Host "  URI: $uri"
 
-$response = az rest `
-    --method post `
-    --uri $uri `
-    --headers "Authorization=Bearer $token" "Content-Type=application/json" `
-    --body "@$registrationPayloadPath" `
-    --only-show-errors
+$bodyContent = Get-Content -Path $registrationPayloadPath -Raw
+
+$response = Invoke-RestMethod `
+    -Method Post `
+    -Uri $uri `
+    -Headers @{
+        "Authorization" = "Bearer $token"
+        "Content-Type"  = "application/json"
+    } `
+    -Body $bodyContent
 
 $responsePath = Join-Path $OutputDirectory "registration-response.json"
-$response | Set-Content -Path $responsePath -Encoding utf8
+$response | ConvertTo-Json -Depth 100 | Set-Content -Path $responsePath -Encoding utf8
 Write-Host "Foundry agent registration response written to: $responsePath"
 
-if ([string]::IsNullOrWhiteSpace($response)) {
+if (-not $response) {
     throw "Foundry agent registration returned an empty response."
 }
 
-$responseObject = $response | ConvertFrom-Json
+$responseObject = $response
 if ($responseObject.name -and $responseObject.name -ne $agentName) {
     throw "Foundry returned agent name '$($responseObject.name)' but the manifest requested '$agentName'."
 }
