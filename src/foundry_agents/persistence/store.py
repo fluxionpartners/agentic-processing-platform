@@ -179,21 +179,21 @@ def create_tax_fact_store(settings: AgentSettings) -> TaxFactStore:
 def build_tax_fact_record(
     pipeline_state: Dict[str, Any], settings: AgentSettings, checkpoint_stage: str = "complete"
 ) -> Dict[str, Any]:
-    extraction_result = pipeline_state.get("extractionResult", {})
-    validation_result = pipeline_state.get("validationResult", {})
+    extraction_result = pipeline_state.get("extractionResult") or {}
+    validation_result = pipeline_state.get("validationResult") or {}
     human_review_result = pipeline_state.get("humanReviewResult")
-    mapping_result = pipeline_state.get("mappingResult", {})
-    form_generation_result = pipeline_state.get("formGenerationResult", {})
-    compliance_result = pipeline_state.get("finalResult", {})
+    mapping_result = pipeline_state.get("mappingResult") or {}
+    form_generation_result = pipeline_state.get("formGenerationResult") or {}
+    compliance_result = pipeline_state.get("finalResult") or {}
     extracted_data = _sanitize_extracted_data(
-        extraction_result.get("extractedData", {}),
+        extraction_result.get("extractedData") or {},
         allow_full_pii=settings.allow_full_pii_persistence,
     )
 
     correlation_id = pipeline_state.get("correlationId")
     record_id = f"tax-facts-{correlation_id}"
     contains_full_pii = settings.allow_full_pii_persistence and _contains_full_ssn(
-        extraction_result.get("extractedData", {})
+        extraction_result.get("extractedData") or {}
     )
 
     return {
@@ -212,13 +212,13 @@ def build_tax_fact_record(
             "documentName": pipeline_state.get("documentName"),
             "blobUri": pipeline_state.get("blobUri"),
             "documentType": "w2",
-            "sourceStatus": pipeline_state.get("intakeResult", {}).get("intakeStatus"),
+            "sourceStatus": (pipeline_state.get("intakeResult") or {}).get("intakeStatus"),
         },
         "extraction": {
             "status": extraction_result.get("extractionStatus"),
             "source": extraction_result.get("source"),
             "extractedData": extracted_data,
-            "fieldConfidence": extraction_result.get("fieldConfidence", {}),
+            "fieldConfidence": extraction_result.get("fieldConfidence") or {},
             "overallConfidence": extraction_result.get("overallConfidence"),
             "extractionTimestamp": extraction_result.get("extractionTimestamp"),
         },
@@ -226,15 +226,15 @@ def build_tax_fact_record(
             "status": validation_result.get("validationStatus"),
             "needsReview": validation_result.get("needsReview"),
             "reviewReason": validation_result.get("reviewReason"),
-            "issues": validation_result.get("issues", []),
-            "warnings": validation_result.get("warnings", []),
+            "issues": validation_result.get("issues") or [],
+            "warnings": validation_result.get("warnings") or [],
         },
         "humanReview": _build_human_review_summary(human_review_result),
         "taxPlanning": {
             "mappingStatus": mapping_result.get("mappingStatus"),
             "mappingProfile": mapping_result.get("mappingProfile"),
-            "normalizedTaxFacts": mapping_result.get("normalizedTaxFacts", {}),
-            "form1040": mapping_result.get("form1040", {}),
+            "normalizedTaxFacts": mapping_result.get("normalizedTaxFacts") or {},
+            "form1040": mapping_result.get("form1040") or {},
         },
         "form1040Document": {
             "status": form_generation_result.get("generationStatus"),
@@ -243,14 +243,14 @@ def build_tax_fact_record(
             "templateVersion": form_generation_result.get("templateVersion"),
             "documentType": form_generation_result.get("documentType"),
             "taxYear": form_generation_result.get("taxYear"),
-            "fieldValues": form_generation_result.get("fieldValues", {}),
-            "artifact": form_generation_result.get("artifact", {}),
+            "fieldValues": form_generation_result.get("fieldValues") or {},
+            "artifact": form_generation_result.get("artifact") or {},
             "generatedAt": form_generation_result.get("generatedAt"),
         },
         "compliance": {
             "status": compliance_result.get("complianceStatus"),
             "mode": compliance_result.get("complianceMode"),
-            "checks": compliance_result.get("checks", {}),
+            "checks": compliance_result.get("checks") or {},
             "auditEvent": compliance_result.get("auditEvent"),
         },
         "governance": {
@@ -288,7 +288,7 @@ def _sanitize_extracted_data(
     extracted_data: Dict[str, Any], *, allow_full_pii: bool
 ) -> Dict[str, Any]:
     sanitized = deepcopy(extracted_data)
-    if not allow_full_pii:
+    if not allow_full_pii and "employeeSSN" in sanitized:
         sanitized["employeeSSN"] = _mask_ssn(sanitized.get("employeeSSN"))
     return sanitized
 

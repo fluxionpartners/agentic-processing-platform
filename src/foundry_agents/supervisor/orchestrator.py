@@ -161,81 +161,88 @@ class SupervisorOrchestrator:
             "correlationId": self.correlation_id,
             "tenantId": checkpoint_record.get("tenantId"),
             "taxpayerId": checkpoint_record.get("taxpayerId"),
-            "documentName": checkpoint_record.get("document", {}).get("documentName"),
-            "blobUri": checkpoint_record.get("document", {}).get("blobUri"),
+            "documentName": (checkpoint_record.get("document") or {}).get("documentName"),
+            "blobUri": (checkpoint_record.get("document") or {}).get("blobUri"),
             "taxYear": checkpoint_record.get("taxYear"),
             "stage": checkpoint_record.get("checkpointStage"),
             "status": checkpoint_record.get("lifecycleStatus"),
             "createdAt": checkpoint_record.get("createdAt"),
             "updatedAt": checkpoint_record.get("updatedAt"),
-            "runtimeSettings": checkpoint_record.get("governance", {}),
+            "runtimeSettings": checkpoint_record.get("governance") or {},
         }
 
         if "persistenceCheckpoints" in checkpoint_record:
             self.state["persistenceCheckpoints"] = checkpoint_record["persistenceCheckpoints"]
 
-        if checkpoint_record.get("document") and checkpoint_record["document"].get("sourceStatus"):
+        document_rec = checkpoint_record.get("document") or {}
+        if document_rec.get("sourceStatus"):
             self.state["intakeResult"] = {
                 "correlationId": self.correlation_id,
-                "blobUri": checkpoint_record["document"].get("blobUri"),
-                "intakeStatus": checkpoint_record["document"].get("sourceStatus"),
+                "blobUri": document_rec.get("blobUri"),
+                "intakeStatus": document_rec.get("sourceStatus"),
                 "intakeTimestamp": checkpoint_record.get("createdAt"),
                 "nextStep": "extraction",
             }
 
-        if "extraction" in checkpoint_record and checkpoint_record["extraction"].get("status"):
+        extraction_rec = checkpoint_record.get("extraction") or {}
+        if extraction_rec.get("status"):
             self.state["extractionResult"] = {
-                "extractionStatus": checkpoint_record["extraction"]["status"],
-                "source": checkpoint_record["extraction"].get("source"),
-                "extractedData": checkpoint_record["extraction"].get("extractedData"),
-                "fieldConfidence": checkpoint_record["extraction"].get("fieldConfidence"),
-                "overallConfidence": checkpoint_record["extraction"].get("overallConfidence"),
-                "extractionTimestamp": checkpoint_record["extraction"].get("extractionTimestamp"),
+                "extractionStatus": extraction_rec["status"],
+                "source": extraction_rec.get("source"),
+                "extractedData": extraction_rec.get("extractedData"),
+                "fieldConfidence": extraction_rec.get("fieldConfidence"),
+                "overallConfidence": extraction_rec.get("overallConfidence"),
+                "extractionTimestamp": extraction_rec.get("extractionTimestamp"),
             }
-        if "validation" in checkpoint_record and checkpoint_record["validation"].get("status"):
+        validation_rec = checkpoint_record.get("validation") or {}
+        if validation_rec.get("status"):
             self.state["validationResult"] = {
-                "validationStatus": checkpoint_record["validation"]["status"],
-                "needsReview": checkpoint_record["validation"].get("needsReview"),
-                "reviewReason": checkpoint_record["validation"].get("reviewReason"),
-                "issues": checkpoint_record["validation"].get("issues"),
-                "warnings": checkpoint_record["validation"].get("warnings"),
+                "validationStatus": validation_rec["status"],
+                "needsReview": validation_rec.get("needsReview"),
+                "reviewReason": validation_rec.get("reviewReason"),
+                "issues": validation_rec.get("issues"),
+                "warnings": validation_rec.get("warnings"),
             }
-        if "humanReview" in checkpoint_record and checkpoint_record["humanReview"].get("status") is not None:
-            status = checkpoint_record["humanReview"]["status"]
+        human_review_rec = checkpoint_record.get("humanReview") or {}
+        if human_review_rec.get("status") is not None:
+            status = human_review_rec["status"]
             next_step = "tax_mapping" if status in {"approved", "completed"} else "awaiting_human_decision"
             self.state["humanReviewResult"] = {
                 "reviewStatus": status,
-                "reviewReason": checkpoint_record["humanReview"].get("reason"),
-                "assignedQueue": checkpoint_record["humanReview"].get("assignedQueue"),
-                "submittedForReview": checkpoint_record["humanReview"].get("submittedForReview"),
+                "reviewReason": human_review_rec.get("reason"),
+                "assignedQueue": human_review_rec.get("assignedQueue"),
+                "submittedForReview": human_review_rec.get("submittedForReview"),
                 "nextStep": next_step,
             }
-        if "taxPlanning" in checkpoint_record and checkpoint_record["taxPlanning"].get("mappingStatus"):
+        tax_planning_rec = checkpoint_record.get("taxPlanning") or {}
+        if tax_planning_rec.get("mappingStatus"):
             self.state["mappingResult"] = {
-                "mappingStatus": checkpoint_record["taxPlanning"]["mappingStatus"],
-                "mappingProfile": checkpoint_record["taxPlanning"].get("mappingProfile"),
-                "normalizedTaxFacts": checkpoint_record["taxPlanning"].get("normalizedTaxFacts"),
-                "form1040": checkpoint_record["taxPlanning"].get("form1040"),
+                "mappingStatus": tax_planning_rec["mappingStatus"],
+                "mappingProfile": tax_planning_rec.get("mappingProfile"),
+                "normalizedTaxFacts": tax_planning_rec.get("normalizedTaxFacts"),
+                "form1040": tax_planning_rec.get("form1040"),
             }
-        if "form1040Document" in checkpoint_record and checkpoint_record["form1040Document"].get("status"):
+        form1040_doc_rec = checkpoint_record.get("form1040Document") or {}
+        if form1040_doc_rec.get("status"):
             self.state["formGenerationResult"] = {
-                "generationStatus": checkpoint_record["form1040Document"]["status"],
-                "generationMode": checkpoint_record["form1040Document"].get("generationMode"),
-                "artifactMode": checkpoint_record["form1040Document"].get("artifactMode"),
-                "templateVersion": checkpoint_record["form1040Document"].get("templateVersion"),
-                "documentType": checkpoint_record["form1040Document"].get("documentType"),
-                "taxYear": checkpoint_record["form1040Document"].get("taxYear"),
-                "fieldValues": checkpoint_record["form1040Document"].get("fieldValues", {}),
-                "artifact": checkpoint_record["form1040Document"].get("artifact", {}),
-                "generatedAt": checkpoint_record["form1040Document"].get("generatedAt"),
+                "generationStatus": form1040_doc_rec["status"],
+                "generationMode": form1040_doc_rec.get("generationMode"),
+                "artifactMode": form1040_doc_rec.get("artifactMode"),
+                "templateVersion": form1040_doc_rec.get("templateVersion"),
+                "documentType": form1040_doc_rec.get("documentType"),
+                "taxYear": form1040_doc_rec.get("taxYear"),
+                "fieldValues": form1040_doc_rec.get("fieldValues") or {},
+                "artifact": form1040_doc_rec.get("artifact") or {},
+                "generatedAt": form1040_doc_rec.get("generatedAt"),
                 "nextStep": "compliance",
             }
-        if "compliance" in checkpoint_record and checkpoint_record["compliance"].get("status"):
+        compliance_rec = checkpoint_record.get("compliance") or {}
+        if compliance_rec.get("status"):
             self.state["finalResult"] = {
-                "complianceStatus": checkpoint_record["compliance"]["status"],
-                "complianceMode": checkpoint_record["compliance"].get("mode"),
-                "checks": checkpoint_record["compliance"].get("checks"),
-                "auditEvent": checkpoint_record["compliance"].get("auditEvent"),
+                "complianceStatus": compliance_rec["status"],
+                "complianceMode": compliance_rec.get("mode"),
+                "checks": compliance_rec.get("checks"),
+                "auditEvent": compliance_rec.get("auditEvent"),
             }
 
     def await_human_review(self, review_result: Dict[str, Any]) -> Dict[str, Any]:

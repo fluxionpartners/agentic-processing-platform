@@ -24,10 +24,11 @@ class USFederal2024W2MappingAdapter(TaxMappingAdapter):
         self.settings = settings
 
     def map(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        extracted_data = payload.get("extractionResult", {}).get("extractedData", {})
-        boxes = extracted_data.get("boxes", {})
-        state_local = extracted_data.get("stateLocal", [])
-        box12_items: List[Dict[str, Any]] = boxes.get("Box12", [])
+        extraction_result = payload.get("extractionResult") or {}
+        extracted_data = extraction_result.get("extractedData") or {}
+        boxes = extracted_data.get("boxes") or {}
+        state_local = extracted_data.get("stateLocal") or []
+        box12_items: List[Dict[str, Any]] = boxes.get("Box12") or []
 
         federal_w2_input = {
             "taxYear": extracted_data.get("taxYear"),

@@ -25,12 +25,12 @@ class BaseHumanReviewAdapter(HumanReviewAdapter):
         self.settings = settings
 
     def _review_packet(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        validation_result = payload.get("validationResult", {})
+        validation_result = payload.get("validationResult") or {}
         return {
             "correlationId": payload.get("correlationId"),
             "reviewReason": validation_result.get("reviewReason"),
-            "issues": validation_result.get("issues", []),
-            "warnings": validation_result.get("warnings", []),
+            "issues": validation_result.get("issues") or [],
+            "warnings": validation_result.get("warnings") or [],
             "submittedForReview": utc_iso(),
         }
 

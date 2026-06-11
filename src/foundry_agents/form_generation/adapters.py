@@ -31,9 +31,9 @@ class HtmlForm1040GenerationAdapter(Form1040GenerationAdapter):
         self.settings = settings
 
     def generate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        mapping_result = payload.get("mappingResult", {})
-        form1040 = mapping_result.get("form1040", {})
-        federal = form1040.get("federal", {})
+        mapping_result = payload.get("mappingResult") or {}
+        form1040 = mapping_result.get("form1040") or {}
+        federal = form1040.get("federal") or {}
         field_values = _build_1040_field_values(payload, federal)
         artifact_id = _artifact_id(payload)
         file_name = f"{artifact_id}.html"

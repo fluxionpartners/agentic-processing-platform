@@ -24,15 +24,15 @@ class LocalComplianceAdapter(ComplianceAdapter):
         self.settings = settings
 
     def evaluate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        extraction_result = payload.get("extractionResult", {})
-        validation_result = payload.get("validationResult", {})
-        mapping_result = payload.get("mappingResult", {})
-        form_generation_result = payload.get("formGenerationResult", {})
+        extraction_result = payload.get("extractionResult") or {}
+        validation_result = payload.get("validationResult") or {}
+        mapping_result = payload.get("mappingResult") or {}
+        form_generation_result = payload.get("formGenerationResult") or {}
         human_review_result = payload.get("humanReviewResult")
-        extracted_data = extraction_result.get("extractedData", {})
+        extracted_data = extraction_result.get("extractedData") or {}
 
         compliance_checks = {
-            "sourceDocumentRecorded": bool(extraction_result.get("source", {}).get("blobUri")),
+            "sourceDocumentRecorded": bool((extraction_result.get("source") or {}).get("blobUri")),
             "extractionConfidenceRecorded": "overallConfidence" in extraction_result,
             "validationCompleted": bool(validation_result.get("validationStatus")),
             "humanReviewRecordedWhenRequired": not validation_result.get("needsReview")
@@ -47,7 +47,7 @@ class LocalComplianceAdapter(ComplianceAdapter):
         }
         if self.settings.is_regulated:
             compliance_checks["humanReviewModeNotLocal"] = (
-                payload.get("humanReviewResult", {}).get("decisionMode") != "local_development"
+                (payload.get("humanReviewResult") or {}).get("decisionMode") != "local_development"
             )
 
         audit_event = {
@@ -61,7 +61,7 @@ class LocalComplianceAdapter(ComplianceAdapter):
             "complianceMode": self.settings.compliance_mode,
             "controlResults": compliance_checks,
             "validationStatus": validation_result.get("validationStatus"),
-            "form1040ArtifactId": form_generation_result.get("artifact", {}).get("artifactId"),
+            "form1040ArtifactId": (form_generation_result.get("artifact") or {}).get("artifactId"),
             "humanReviewStatus": human_review_result.get("reviewStatus")
             if human_review_result
             else None,

@@ -28,9 +28,9 @@ class LocalW2ValidationAdapter(ValidationAdapter):
         self.settings = settings
 
     def validate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        extraction_result = payload.get("extractionResult", {})
-        extracted_data = extraction_result.get("extractedData", {})
-        field_confidence = extraction_result.get("fieldConfidence", {})
+        extraction_result = payload.get("extractionResult") or {}
+        extracted_data = extraction_result.get("extractedData") or {}
+        field_confidence = extraction_result.get("fieldConfidence") or {}
 
         issues: List[Dict[str, Any]] = []
         warnings: List[Dict[str, Any]] = []
@@ -68,7 +68,7 @@ class LocalW2ValidationAdapter(ValidationAdapter):
                 }
             )
 
-        boxes = extracted_data.get("boxes", {})
+        boxes = extracted_data.get("boxes") or {}
         for box_name, amount in boxes.items():
             if isinstance(amount, list):
                 for index, item in enumerate(amount):
